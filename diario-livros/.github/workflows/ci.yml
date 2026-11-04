@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.os }} · C++${{ matrix.cxx_std }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      # Roda todas as combinações mesmo se uma falhar, para ver o quadro completo.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        cxx_std: [17, 20]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_CXX_STANDARD=${{ matrix.cxx_std }}
+
+      # --config é usado por geradores multi-config (Visual Studio no Windows);
+      # nos demais é ignorado.
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure

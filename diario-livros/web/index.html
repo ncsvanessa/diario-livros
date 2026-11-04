@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diário de Livros</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --papel: #f6f1e7;
+    --papel-2: #efe7d8;
+    --tinta: #2b2420;
+    --tinta-suave: #6d625a;
+    --linha: #ddd2bf;
+    --acento: #9c3d2e;
+    --acento-escuro: #7c2f23;
+    --estrela: #d99a1e;
+    --cartao: #fffdf8;
+    --sombra: 0 1px 2px rgba(43,36,32,.06), 0 6px 20px rgba(43,36,32,.07);
+    --raio: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --papel: #1d1a17; --papel-2: #26221e; --tinta: #efe7da; --tinta-suave: #a99d90;
+      --linha: #3a342e; --acento: #e0806c; --acento-escuro: #c96a57; --cartao: #24201c;
+      --sombra: 0 1px 2px rgba(0,0,0,.3), 0 6px 20px rgba(0,0,0,.25);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--papel); color: var(--tinta);
+    font: 15px/1.5 Inter, system-ui, sans-serif;
+  }
+  .topo {
+    max-width: 1120px; margin: 0 auto; padding: 40px 20px 8px;
+    display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px;
+  }
+  h1 { font-family: Fraunces, Georgia, serif; font-size: 40px; margin: 0; letter-spacing: -.02em; }
+  h1 em { font-style: normal; color: var(--acento); }
+  .sub { color: var(--tinta-suave); margin: 4px 0 0; }
+  .stats { display: flex; gap: 28px; }
+  .stat b { display: block; font-family: Fraunces, Georgia, serif; font-size: 28px; line-height: 1; }
+  .stat span { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--tinta-suave); }
+
+  main {
+    max-width: 1120px; margin: 0 auto; padding: 20px;
+    display: grid; grid-template-columns: 340px 1fr; gap: 28px; align-items: start;
+  }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+
+  .painel {
+    background: var(--cartao); border: 1px solid var(--linha); border-radius: var(--raio);
+    padding: 20px; box-shadow: var(--sombra); position: sticky; top: 16px;
+  }
+  @media (max-width: 860px) { .painel { position: static; } }
+  .painel h2 { font-family: Fraunces, Georgia, serif; font-size: 20px; margin: 0 0 14px; }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+  label small { font-weight: 400; color: var(--tinta-suave); }
+  input[type=text], input[type=url], input[type=date], input[type=search], select {
+    width: 100%; padding: 9px 11px; border: 1px solid var(--linha); border-radius: 7px;
+    background: var(--papel); color: var(--tinta); font: inherit;
+  }
+  input:focus, select:focus, button:focus-visible { outline: 2px solid var(--acento); outline-offset: 1px; }
+  .linha2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+  input, select { min-width: 0; }
+  .capa-opcoes { display: flex; gap: 8px; align-items: center; }
+  .capa-opcoes input[type=url] { flex: 1; }
+  .btn-arquivo {
+    border: 1px dashed var(--linha); border-radius: 7px; padding: 8px 10px; cursor: pointer;
+    font-size: 13px; white-space: nowrap; color: var(--tinta-suave); background: none; font-family: inherit;
+  }
+  .previa { margin-top: 8px; display: none; align-items: center; gap: 10px; font-size: 13px; color: var(--tinta-suave); }
+  .previa img { width: 42px; height: 62px; object-fit: cover; border-radius: 3px; border: 1px solid var(--linha); }
+  .previa.ativa { display: flex; }
+
+  .estrelas-input { display: flex; align-items: center; gap: 2px; }
+  .estrelas-input button {
+    background: none; border: 0; padding: 2px; cursor: pointer; font-size: 26px; line-height: 1;
+    color: var(--linha);
+  }
+  .estrelas-input button.on { color: var(--estrela); }
+  .estrelas-input .zerar { font-size: 12px; color: var(--tinta-suave); margin-left: 8px; text-decoration: underline; }
+  .estrelas-input .valor { font-size: 13px; color: var(--tinta-suave); margin-left: auto; }
+
+  .acoes { display: flex; gap: 8px; margin-top: 18px; }
+  .btn {
+    flex: 1; padding: 10px 14px; border-radius: 7px; border: 1px solid var(--acento);
+    background: var(--acento); color: #fff; font: 600 14px Inter, sans-serif; cursor: pointer;
+  }
+  .btn:hover { background: var(--acento-escuro); }
+  .btn.sec { background: none; color: var(--tinta); border-color: var(--linha); flex: 0 0 auto; }
+  .erro { color: var(--acento); font-size: 13px; margin: 10px 0 0; min-height: 1em; }
+
+  .barra { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+  .barra input { flex: 1 1 200px; }
+  .barra select { width: auto; }
+
+  .grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 18px; }
+  @media (max-width: 520px) {
+    .grade { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .livro .capa .sem { font-size: 15px; padding: 12px; }
+    h1 { font-size: 32px; }
+  }
+  .livro {
+    background: var(--cartao); border: 1px solid var(--linha); border-radius: var(--raio);
+    overflow: hidden; box-shadow: var(--sombra); display: flex; flex-direction: column;
+  }
+  .livro .capa { aspect-ratio: 2 / 3; background: var(--papel-2); position: relative; }
+  .livro .capa img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .livro .capa .sem {
+    position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center;
+    padding: 16px; font-family: Fraunces, Georgia, serif; font-size: 18px; line-height: 1.2;
+    background: linear-gradient(160deg, #9c3d2e, #6e2a20); color: #fff;
+  }
+  .livro .capa .sem small { font-family: Inter, sans-serif; font-size: 12px; opacity: .85; margin-top: 8px; }
+  .livro .info { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
+  .livro h3 { font-family: Fraunces, Georgia, serif; font-size: 16px; margin: 0; line-height: 1.25; }
+  .livro .autor { color: var(--tinta-suave); font-size: 13px; }
+  .livro .nota { color: var(--estrela); letter-spacing: 1px; font-size: 15px; }
+  .livro .nota .vazia { color: var(--linha); }
+  .livro .datas { font-size: 12px; color: var(--tinta-suave); }
+  .livro .ops { display: flex; gap: 12px; margin-top: auto; padding-top: 8px; }
+  .livro .ops button {
+    background: none; border: 0; padding: 0; font: 500 13px Inter, sans-serif; cursor: pointer;
+    color: var(--tinta-suave); text-decoration: underline; text-underline-offset: 3px;
+  }
+  .livro .ops button:hover { color: var(--acento); }
+
+  .vazio {
+    border: 1px dashed var(--linha); border-radius: var(--raio); padding: 48px 20px; text-align: center;
+    color: var(--tinta-suave);
+  }
+  .vazio b { display: block; font-family: Fraunces, Georgia, serif; font-size: 20px; color: var(--tinta); margin-bottom: 4px; }
+</style>
+</head>
+<body>
+
+<header class="topo">
+  <div>
+    <h1>Diário de <em>Livros</em></h1>
+    <p class="sub">O que eu li, quando li e o que achei.</p>
+  </div>
+  <div class="stats">
+    <div class="stat"><b id="st-total">0</b><span>livros</span></div>
+    <div class="stat"><b id="st-media">–</b><span>nota média</span></div>
+  </div>
+</header>
+
+<main>
+  <section class="painel" aria-labelledby="form-titulo">
+    <h2 id="form-titulo">Registrar leitura</h2>
+    <form id="form" novalidate>
+      <label for="titulo">Título</label>
+      <input type="text" id="titulo" required autocomplete="off">
+
+      <label for="autor">Autor</label>
+      <input type="text" id="autor" required autocomplete="off">
+
+      <label for="capaUrl">Capa <small>(URL ou arquivo)</small></label>
+      <div class="capa-opcoes">
+        <input type="url" id="capaUrl" placeholder="https://...">
+        <button type="button" class="btn-arquivo" id="btn-arquivo">Arquivo…</button>
+        <input type="file" id="capaArquivo" accept="image/*" hidden>
+      </div>
+      <div class="previa" id="previa"><img alt=""><span>Prévia da capa</span></div>
+
+      <div class="linha2">
+        <div>
+          <label for="dataLancamento">Lançamento</label>
+          <input type="date" id="dataLancamento">
+        </div>
+        <div>
+          <label for="dataLeitura">Lido em</label>
+          <input type="date" id="dataLeitura">
+        </div>
+      </div>
+
+      <label id="nota-label">Avaliação</label>
+      <div class="estrelas-input" id="estrelas" role="radiogroup" aria-labelledby="nota-label"></div>
+
+      <p class="erro" id="erro" role="alert"></p>
+      <div class="acoes">
+        <button type="submit" class="btn" id="btn-salvar">Adicionar ao diário</button>
+        <button type="button" class="btn sec" id="btn-cancelar" hidden>Cancelar</button>
+      </div>
+    </form>
+  </section>
+
+  <section aria-label="Livros lidos">
+    <div class="barra">
+      <input type="search" id="busca" placeholder="Buscar por título ou autor" aria-label="Buscar">
+      <select id="ordem" aria-label="Ordenar">
+        <option value="">Ordem de registro</option>
+        <option value="nota">Maior nota</option>
+      </select>
+    </div>
+    <div class="grade" id="grade"></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let notaAtual = 0;
+let editandoId = null;
+let capaDados = ""; // data:image vinda de upload; tem prioridade sobre a URL
+
+// ---- Estrelas do formulário ------------------------------------------------
+function desenharEstrelas() {
+  const box = $("estrelas");
+  box.replaceChildren();
+  for (let i = 1; i <= 5; i++) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = "★";
+    b.className = i <= notaAtual ? "on" : "";
+    b.setAttribute("role", "radio");
+    b.setAttribute("aria-checked", String(i === notaAtual));
+    b.setAttribute("aria-label", `${i} estrela${i > 1 ? "s" : ""}`);
+    b.onclick = () => { notaAtual = i; desenharEstrelas(); };
+    box.append(b);
+  }
+  const z = document.createElement("button");
+  z.type = "button"; z.className = "zerar"; z.textContent = "0";
+  z.setAttribute("aria-label", "Nenhuma estrela");
+  z.onclick = () => { notaAtual = 0; desenharEstrelas(); };
+  const v = document.createElement("span");
+  v.className = "valor"; v.textContent = `${notaAtual}/5`;
+  box.append(z, v);
+}
+
+// ---- Capa por arquivo: redimensiona para não inflar o JSON ----------------
+$("btn-arquivo").onclick = () => $("capaArquivo").click();
+$("capaArquivo").onchange = async (e) => {
+  const arq = e.target.files[0];
+  if (!arq) return;
+  capaDados = await reduzirImagem(arq, 400);
+  $("capaUrl").value = "";
+  mostrarPrevia(capaDados);
+};
+$("capaUrl").oninput = () => { capaDados = ""; mostrarPrevia($("capaUrl").value.trim()); };
+
+function reduzirImagem(arquivo, larguraMax) {
+  return new Promise((ok, falha) => {
+    const img = new Image();
+    img.onload = () => {
+      const escala = Math.min(1, larguraMax / img.width);
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * escala);
+      c.height = Math.round(img.height * escala);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(img.src);
+      ok(c.toDataURL("image/jpeg", 0.82));
+    };
+    img.onerror = falha;
+    img.src = URL.createObjectURL(arquivo);
+  });
+}
+
+function mostrarPrevia(src) {
+  const p = $("previa");
+  const ok = /^(https?:\/\/|data:image\/)/.test(src);
+  p.classList.toggle("ativa", ok);
+  if (ok) p.querySelector("img").src = src;
+}
+
+// ---- API ---------------------------------------------------------------------
+async function api(metodo, caminho, corpo) {
+  const r = await fetch(caminho, {
+    method: metodo,
+    headers: corpo ? { "Content-Type": "application/json" } : {},
+    body: corpo ? JSON.stringify(corpo) : undefined,
+  });
+  if (r.status === 204) return null;
+  const dados = await r.json();
+  if (!r.ok) throw new Error(dados.erro || `Erro ${r.status}`);
+  return dados;
+}
+
+// ---- Listagem ---------------------------------------------------------------
+function fmtData(iso) {
+  if (!iso) return "";
+  const [a, m, d] = iso.split("-");
+  return `${d}/${m}/${a}`;
+}
+
+function cartao(l) {
+  const art = document.createElement("article");
+  art.className = "livro";
+
+  const capa = document.createElement("div");
+  capa.className = "capa";
+  const semCapa = () => {
+    const s = document.createElement("div");
+    s.className = "sem";
+    s.textContent = l.titulo;
+    const a = document.createElement("small");
+    a.textContent = l.autor;
+    s.append(a);
+    capa.replaceChildren(s);
+  };
+  if (l.capaUrl) {
+    const img = document.createElement("img");
+    img.src = l.capaUrl;
+    img.alt = `Capa de ${l.titulo}`;
+    img.loading = "lazy";
+    img.onerror = semCapa;
+    capa.append(img);
+  } else semCapa();
+
+  const info = document.createElement("div");
+  info.className = "info";
+  const h = document.createElement("h3"); h.textContent = l.titulo;
+  const au = document.createElement("div"); au.className = "autor"; au.textContent = l.autor;
+  const nota = document.createElement("div");
+  nota.className = "nota";
+  nota.setAttribute("aria-label", `${l.nota} de 5 estrelas`);
+  nota.textContent = "★".repeat(l.nota);
+  const vaz = document.createElement("span"); vaz.className = "vazia"; vaz.textContent = "★".repeat(5 - l.nota);
+  nota.append(vaz);
+
+  const datas = document.createElement("div");
+  datas.className = "datas";
+  const partes = [];
+  if (l.dataLancamento) partes.push(`Lançado em ${l.dataLancamento.slice(0, 4)}`);
+  if (l.dataLeitura) partes.push(`lido em ${fmtData(l.dataLeitura)}`);
+  datas.textContent = partes.join(" · ");
+
+  const ops = document.createElement("div");
+  ops.className = "ops";
+  const ed = document.createElement("button"); ed.textContent = "Editar"; ed.onclick = () => editar(l);
+  const rm = document.createElement("button"); rm.textContent = "Remover"; rm.onclick = () => remover(l);
+  ops.append(ed, rm);
+
+  info.append(h, au, nota, datas, ops);
+  art.append(capa, info);
+  return art;
+}
+
+async function carregar() {
+  const q = $("busca").value.trim();
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if ($("ordem").value) params.set("ordem", $("ordem").value);
+
+  const [livros, st] = await Promise.all([
+    api("GET", `/api/livros?${params}`),
+    api("GET", "/api/estatisticas"),
+  ]);
+
+  $("st-total").textContent = st.total;
+  $("st-media").textContent = st.total ? st.media.toFixed(1).replace(".", ",") : "–";
+
+  const grade = $("grade");
+  if (!livros.length) {
+    const v = document.createElement("div");
+    v.className = "vazio";
+    v.style.gridColumn = "1 / -1";
+    v.innerHTML = q
+      ? "<b>Nada encontrado</b>Nenhum título ou autor corresponde à busca."
+      : "<b>Seu diário está em branco</b>Registre o primeiro livro no formulário ao lado.";
+    grade.replaceChildren(v);
+    return;
+  }
+  grade.replaceChildren(...livros.map(cartao));
+}
+
+// ---- Formulário -------------------------------------------------------------
+function limpar() {
+  $("form").reset();
+  capaDados = "";
+  notaAtual = 0;
+  editandoId = null;
+  $("erro").textContent = "";
+  $("form-titulo").textContent = "Registrar leitura";
+  $("btn-salvar").textContent = "Adicionar ao diário";
+  $("btn-cancelar").hidden = true;
+  mostrarPrevia("");
+  desenharEstrelas();
+}
+
+function editar(l) {
+  editandoId = l.id;
+  $("titulo").value = l.titulo;
+  $("autor").value = l.autor;
+  capaDados = l.capaUrl.startsWith("data:") ? l.capaUrl : "";
+  $("capaUrl").value = capaDados ? "" : l.capaUrl;
+  $("dataLancamento").value = l.dataLancamento;
+  $("dataLeitura").value = l.dataLeitura;
+  notaAtual = l.nota;
+  $("erro").textContent = "";
+  $("form-titulo").textContent = "Editar leitura";
+  $("btn-salvar").textContent = "Salvar alterações";
+  $("btn-cancelar").hidden = false;
+  mostrarPrevia(l.capaUrl);
+  desenharEstrelas();
+  $("titulo").focus();
+}
+
+async function remover(l) {
+  if (!confirm(`Remover "${l.titulo}" do diário?`)) return;
+  await api("DELETE", `/api/livros/${l.id}`);
+  if (editandoId === l.id) limpar();
+  carregar();
+}
+
+$("form").onsubmit = async (e) => {
+  e.preventDefault();
+  const livro = {
+    titulo: $("titulo").value,
+    autor: $("autor").value,
+    capaUrl: capaDados || $("capaUrl").value.trim(),
+    dataLancamento: $("dataLancamento").value,
+    dataLeitura: $("dataLeitura").value,
+    nota: notaAtual,
+  };
+  try {
+    if (editandoId) await api("PUT", `/api/livros/${editandoId}`, livro);
+    else await api("POST", "/api/livros", livro);
+    limpar();
+    carregar();
+  } catch (err) {
+    // O servidor devolve as regras violadas separadas por "; ".
+    $("erro").textContent = err.message.charAt(0).toUpperCase() + err.message.slice(1).replaceAll("; ", ". ") + ".";
+  }
+};
+$("btn-cancelar").onclick = limpar;
+
+let debounce;
+$("busca").oninput = () => { clearTimeout(debounce); debounce = setTimeout(carregar, 200); };
+$("ordem").onchange = carregar;
+
+desenharEstrelas();
+carregar();
+</script>
+</body>
+</html>

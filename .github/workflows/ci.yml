@@ -171,3 +171,25 @@ jobs:
       - name: Coverage report
         run: gcovr build
 
+  # Garante que a imagem de produção compila e que o servidor responde dentro dela.
+  docker:
+    name: Imagem Docker
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t diario-livros .
+
+      - name: Smoke test
+        run: |
+          docker run -d --name diario -p 8080:8080 diario-livros
+          curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 \
+            http://localhost:8080/api/estatisticas
+          curl --fail --silent --show-error -o /dev/null http://localhost:8080/
+
+      - name: Container logs
+        if: always()
+        run: docker logs diario || true

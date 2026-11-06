@@ -45,6 +45,19 @@ if(DIARIO_COVERAGE)
   target_link_options(diario_core PUBLIC --coverage)
 endif()
 
+# ---- Persistência em PostgreSQL (opcional) -------------------------------------
+# Desligada por padrão para não exigir libpq em todo build; ligada no Docker de
+# produção e no job de CI que tem um PostgreSQL disponível.
+option(DIARIO_WITH_POSTGRES "Compila o repositório PostgreSQL (requer libpq)" OFF)
+if(DIARIO_WITH_POSTGRES)
+  find_package(PostgreSQL REQUIRED)
+  add_library(diario_postgres src/repositorio_postgres.cpp)
+  target_link_libraries(diario_postgres PUBLIC diario_core PRIVATE PostgreSQL::PostgreSQL)
+  if(DIARIO_COVERAGE)
+    target_compile_options(diario_postgres PRIVATE --coverage -O0 -g)
+  endif()
+endif()
+
 # ---- Servidor web --------------------------------------------------------------
 if(DIARIO_BUILD_SERVER)
   # cpp-httplib sem TLS/compressão: só servimos em localhost.
@@ -83,4 +96,11 @@ if(DIARIO_BUILD_TESTS)
 
   include(GoogleTest)
   gtest_discover_tests(diario_tests)
+
+  if(DIARIO_WITH_POSTGRES)
+    add_executable(diario_tests_postgres tests/test_repositorio_postgres.cpp)
+    target_link_libraries(diario_tests_postgres PRIVATE diario_postgres GTest::gtest_main)
+    # Os testes compartilham um único banco: RESOURCE_LOCK impede que rodem em paralelo (ctest -j).
+    gtest_discover_tests(diario_tests_postgres PROPERTIES RESOURCE_LOCK postgres)
+  endif()
 endif()

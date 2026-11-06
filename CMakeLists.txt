@@ -34,6 +34,17 @@ add_library(diario_core src/diario.cpp)
 target_include_directories(diario_core PUBLIC include)
 target_link_libraries(diario_core PUBLIC nlohmann_json::nlohmann_json)
 
+# Cobertura (GCC/Clang). Só o código do sistema é instrumentado; dependências e testes não.
+option(DIARIO_COVERAGE "Instrumenta o núcleo para medir cobertura" OFF)
+if(DIARIO_COVERAGE)
+  if(MSVC)
+    message(FATAL_ERROR "DIARIO_COVERAGE requer GCC ou Clang (use MinGW no Windows)")
+  endif()
+  target_compile_options(diario_core PRIVATE --coverage -O0 -g)
+  # PUBLIC: quem linka o núcleo (testes, servidor) também precisa do runtime do gcov.
+  target_link_options(diario_core PUBLIC --coverage)
+endif()
+
 # ---- Servidor web --------------------------------------------------------------
 if(DIARIO_BUILD_SERVER)
   # cpp-httplib sem TLS/compressão: só servimos em localhost.

@@ -34,3 +34,87 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+
+  # Cobertura com GCC (Linux) e AppleClang (macOS). Build Debug para que -O0 não
+  # seja sobrescrito pelas flags de Release.
+  coverage:
+    name: Cobertura · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            gcov: gcov
+          - os: macos-latest
+            # AppleClang gera dados no formato do llvm-cov, lidos via modo de compatibilidade gcov.
+            gcov: xcrun llvm-cov gcov
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python (gcovr)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install gcovr
+        run: pip install -r requirements-dev.txt
+
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DDIARIO_COVERAGE=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Coverage report
+        run: gcovr --gcov-executable "${{ matrix.gcov }}" build
+
+  # Windows: MSVC não gera dados gcov, então a cobertura usa GCC via MSYS2 (UCRT64).
+  # O servidor não é compilado aqui: a cobertura mede o núcleo, e o build MSVC do
+  # servidor já é verificado no job build-and-test.
+  coverage-windows:
+    name: Cobertura · windows-latest (MinGW)
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python-gcovr
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DDIARIO_COVERAGE=ON
+          -DDIARIO_BUILD_SERVER=OFF
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Coverage report
+        run: gcovr build

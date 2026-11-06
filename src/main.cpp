@@ -1,15 +1,24 @@
-// Servidor local do Diário de Livros.
-// Uso: diario_server [--porta 8080] [--dados diario.json] [--web <pasta>]
+// Servidor do Diário de Livros.
+// Uso: diario_server [--porta 8080] [--host 127.0.0.1] [--dados diario.json] [--web <pasta>]
+//
+// Persistência: se a variável de ambiente DATABASE_URL estiver definida, usa PostgreSQL
+// (exige build com DIARIO_WITH_POSTGRES=ON); senão, o arquivo indicado em --dados.
+// A URL vem do ambiente, e não de um argumento, porque contém a senha do banco.
 
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 
 #include <httplib.h>
 
 #include "diario/diario.hpp"
 #include "diario/repositorio.hpp"
+#ifdef DIARIO_COM_POSTGRES
+#include "diario/repositorio_postgres.hpp"
+#endif
 
 using nlohmann::json;
 
@@ -17,6 +26,8 @@ namespace {
 
 struct Config {
     int porta = 8080;
+    // Padrão só localhost; em produção (container) usa-se --host 0.0.0.0.
+    std::string host = "127.0.0.1";
     std::string arquivoDados = "diario.json";
     std::string pastaWeb = DIARIO_WEB_DIR;
 };
@@ -27,10 +38,23 @@ Config lerArgs(int argc, char** argv) {
         const std::string chave = argv[i];
         const std::string valor = argv[i + 1];
         if (chave == "--porta") c.porta = std::atoi(valor.c_str());
+        else if (chave == "--host") c.host = valor;
         else if (chave == "--dados") c.arquivoDados = valor;
         else if (chave == "--web") c.pastaWeb = valor;
     }
     return c;
+}
+
+std::unique_ptr<diario::Repositorio> criarRepositorio(const Config& cfg) {
+    const char* url = std::getenv("DATABASE_URL");
+    if (url == nullptr || *url == '\0') {
+        return std::make_unique<diario::RepositorioArquivo>(cfg.arquivoDados);
+    }
+#ifdef DIARIO_COM_POSTGRES
+    return std::make_unique<diario::RepositorioPostgres>(url);
+#else
+    throw std::runtime_error("DATABASE_URL definida, mas o servidor foi compilado sem DIARIO_WITH_POSTGRES");
+#endif
 }
 
 void responderJson(httplib::Response& res, const json& corpo, int status = 200) {
@@ -47,12 +71,13 @@ void responderErro(httplib::Response& res, int status, const std::string& msg) {
 int main(int argc, char** argv) {
     const Config cfg = lerArgs(argc, argv);
 
-    diario::RepositorioArquivo repo(cfg.arquivoDados);
+    std::unique_ptr<diario::Repositorio> repo;
     diario::Diario dl;
     try {
-        dl = repo.carregar();
+        repo = criarRepositorio(cfg);
+        dl = repo->carregar();
     } catch (const std::exception& e) {
-        std::cerr << "Erro ao ler " << cfg.arquivoDados << ": " << e.what() << '\n';
+        std::cerr << "Erro ao carregar os dados: " << e.what() << '\n';
         return 1;
     }
 
@@ -96,7 +121,7 @@ int main(int argc, char** argv) {
             auto livro = json::parse(req.body).get<diario::Livro>();
             std::lock_guard<std::mutex> lock(mtx);
             const int id = dl.adicionar(std::move(livro));
-            repo.salvar(dl);
+            repo->salvar(dl);
             responderJson(res, *dl.buscar(id), 201);
         } catch (const std::invalid_argument& e) {
             responderErro(res, 400, e.what());
@@ -114,7 +139,7 @@ int main(int argc, char** argv) {
                 responderErro(res, 404, "livro não encontrado");
                 return;
             }
-            repo.salvar(dl);
+            repo->salvar(dl);
             responderJson(res, *dl.buscar(id));
         } catch (const std::invalid_argument& e) {
             responderErro(res, 400, e.what());
@@ -130,14 +155,15 @@ int main(int argc, char** argv) {
             responderErro(res, 404, "livro não encontrado");
             return;
         }
-        repo.salvar(dl);
+        repo->salvar(dl);
         res.status = 204;
     });
 
-    std::cout << "Diário de Livros em http://localhost:" << cfg.porta << '\n'
-              << "Dados: " << cfg.arquivoDados << '\n';
-    // Só localhost: não expõe o diário na rede.
-    if (!srv.listen("127.0.0.1", cfg.porta)) {
+    // Não imprime a DATABASE_URL: ela contém a senha e iria para os logs da plataforma.
+    const bool usaBanco = std::getenv("DATABASE_URL") != nullptr && *std::getenv("DATABASE_URL") != '\0';
+    std::cout << "Diário de Livros em http://" << cfg.host << ':' << cfg.porta << '\n'
+              << "Dados: " << (usaBanco ? "PostgreSQL (DATABASE_URL)" : cfg.arquivoDados) << std::endl;
+    if (!srv.listen(cfg.host, cfg.porta)) {
         std::cerr << "Não foi possível abrir a porta " << cfg.porta << '\n';
         return 1;
     }

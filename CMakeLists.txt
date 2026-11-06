@@ -73,6 +73,10 @@ if(DIARIO_BUILD_SERVER)
 
   add_executable(diario_server src/main.cpp)
   target_link_libraries(diario_server PRIVATE diario_core httplib::httplib)
+  if(DIARIO_WITH_POSTGRES)
+    target_link_libraries(diario_server PRIVATE diario_postgres)
+    target_compile_definitions(diario_server PRIVATE DIARIO_COM_POSTGRES)
+  endif()
   # Pasta padrão da interface; pode ser trocada com --web <pasta>.
   target_compile_definitions(diario_server PRIVATE
     DIARIO_WEB_DIR="${CMAKE_CURRENT_SOURCE_DIR}/web")

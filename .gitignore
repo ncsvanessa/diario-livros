@@ -5,3 +5,5 @@ out/
 .idea/
 cmake-build-*/
 diario.json
+build/
+build-*/

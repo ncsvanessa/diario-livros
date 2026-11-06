@@ -35,7 +35,61 @@ jobs:
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
 
-  # Cobertura com GCC (Linux) e AppleClang (macOS). Build Debug para que -O0 não
+  # Cobertura no Linux, incluindo o repositório PostgreSQL contra um banco real.
+  # Service containers só existem em runners Linux, por isso este job é separado.
+  coverage-linux:
+    name: Cobertura · ubuntu-latest (com PostgreSQL)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        # Espera o banco aceitar conexões antes de iniciar os steps.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DIARIO_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python (gcovr)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpq-dev
+          pip install -r requirements-dev.txt
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+          -DDIARIO_COVERAGE=ON -DDIARIO_WITH_POSTGRES=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Coverage report
+        run: gcovr build
+
+  # Cobertura com AppleClang (sem PostgreSQL). Build Debug para que -O0 não
   # seja sobrescrito pelas flags de Release.
   coverage:
     name: Cobertura · ${{ matrix.os }}
@@ -45,8 +99,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
-            gcov: gcov
           - os: macos-latest
             # AppleClang gera dados no formato do llvm-cov, lidos via modo de compatibilidade gcov.
             gcov: xcrun llvm-cov gcov
@@ -118,3 +170,4 @@ jobs:
 
       - name: Coverage report
         run: gcovr build
+

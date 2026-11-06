@@ -9,6 +9,7 @@
 #include <httplib.h>
 
 #include "diario/diario.hpp"
+#include "diario/repositorio.hpp"
 
 using nlohmann::json;
 
@@ -46,9 +47,10 @@ void responderErro(httplib::Response& res, int status, const std::string& msg) {
 int main(int argc, char** argv) {
     const Config cfg = lerArgs(argc, argv);
 
+    diario::RepositorioArquivo repo(cfg.arquivoDados);
     diario::Diario dl;
     try {
-        dl = diario::Diario::carregar(cfg.arquivoDados);
+        dl = repo.carregar();
     } catch (const std::exception& e) {
         std::cerr << "Erro ao ler " << cfg.arquivoDados << ": " << e.what() << '\n';
         return 1;
@@ -94,7 +96,7 @@ int main(int argc, char** argv) {
             auto livro = json::parse(req.body).get<diario::Livro>();
             std::lock_guard<std::mutex> lock(mtx);
             const int id = dl.adicionar(std::move(livro));
-            dl.salvar(cfg.arquivoDados);
+            repo.salvar(dl);
             responderJson(res, *dl.buscar(id), 201);
         } catch (const std::invalid_argument& e) {
             responderErro(res, 400, e.what());
@@ -112,7 +114,7 @@ int main(int argc, char** argv) {
                 responderErro(res, 404, "livro não encontrado");
                 return;
             }
-            dl.salvar(cfg.arquivoDados);
+            repo.salvar(dl);
             responderJson(res, *dl.buscar(id));
         } catch (const std::invalid_argument& e) {
             responderErro(res, 400, e.what());
@@ -128,7 +130,7 @@ int main(int argc, char** argv) {
             responderErro(res, 404, "livro não encontrado");
             return;
         }
-        dl.salvar(cfg.arquivoDados);
+        repo.salvar(dl);
         res.status = 204;
     });
 

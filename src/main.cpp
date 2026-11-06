@@ -66,6 +66,12 @@ void responderErro(httplib::Response& res, int status, const std::string& msg) {
     responderJson(res, json{{"erro", msg}}, status);
 }
 
+// Falha de gravação (ex.: banco fora do ar) é problema do servidor, não do pedido.
+void responderFalhaAoSalvar(httplib::Response& res, const std::exception& e) {
+    std::cerr << "Erro ao salvar: " << e.what() << '\n';
+    responderErro(res, 503, "não foi possível salvar; tente novamente");
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -120,13 +126,19 @@ int main(int argc, char** argv) {
         try {
             auto livro = json::parse(req.body).get<diario::Livro>();
             std::lock_guard<std::mutex> lock(mtx);
-            const int id = dl.adicionar(std::move(livro));
-            repo->salvar(dl);
+            // Altera uma cópia e só a adota depois de salvar: se a gravação falhar,
+            // a memória continua igual ao que está persistido.
+            auto novo = dl;
+            const int id = novo.adicionar(std::move(livro));
+            repo->salvar(novo);
+            dl = std::move(novo);
             responderJson(res, *dl.buscar(id), 201);
         } catch (const std::invalid_argument& e) {
             responderErro(res, 400, e.what());
         } catch (const json::exception&) {
             responderErro(res, 400, "JSON inválido");
+        } catch (const std::runtime_error& e) {
+            responderFalhaAoSalvar(res, e);
         }
     });
 
@@ -135,27 +147,38 @@ int main(int argc, char** argv) {
         try {
             auto livro = json::parse(req.body).get<diario::Livro>();
             std::lock_guard<std::mutex> lock(mtx);
-            if (!dl.atualizar(id, std::move(livro))) {
+            auto novo = dl;
+            if (!novo.atualizar(id, std::move(livro))) {
                 responderErro(res, 404, "livro não encontrado");
                 return;
             }
-            repo->salvar(dl);
+            repo->salvar(novo);
+            dl = std::move(novo);
             responderJson(res, *dl.buscar(id));
         } catch (const std::invalid_argument& e) {
             responderErro(res, 400, e.what());
         } catch (const json::exception&) {
             responderErro(res, 400, "JSON inválido");
+        } catch (const std::runtime_error& e) {
+            responderFalhaAoSalvar(res, e);
         }
     });
 
     srv.Delete(R"(/api/livros/(\d+))", [&](const httplib::Request& req, httplib::Response& res) {
         const int id = std::stoi(req.matches[1]);
         std::lock_guard<std::mutex> lock(mtx);
-        if (!dl.remover(id)) {
+        auto novo = dl;
+        if (!novo.remover(id)) {
             responderErro(res, 404, "livro não encontrado");
             return;
         }
-        repo->salvar(dl);
+        try {
+            repo->salvar(novo);
+        } catch (const std::runtime_error& e) {
+            responderFalhaAoSalvar(res, e);
+            return;
+        }
+        dl = std::move(novo);
         res.status = 204;
     });
 

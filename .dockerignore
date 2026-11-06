@@ -1,0 +1,7 @@
+.git
+.github
+.vscode
+build
+build-*
+tests
+diario.json

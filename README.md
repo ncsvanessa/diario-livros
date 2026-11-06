@@ -34,7 +34,31 @@ ctest --test-dir build -C Release --output-on-failure
 .\build\Release\diario_server.exe     # Windows (Visual Studio)
 ```
 
-Opções do servidor: `--porta 8080`, `--dados diario.json` e `--web <pasta da interface>`.
+Opções do servidor: `--porta 8080`, `--host 127.0.0.1`, `--dados diario.json` e `--web <pasta da interface>`.
+
+## Persistência
+
+| Modo | Quando | Como |
+|---|---|---|
+| Arquivo JSON | Padrão (desenvolvimento local) | `--dados <arquivo>` |
+| PostgreSQL | Produção | Build com `-DDIARIO_WITH_POSTGRES=ON` (requer libpq) e variável de ambiente `DATABASE_URL` |
+
+A URL do banco é lida do ambiente, não de argumento, porque contém a senha. As tabelas são criadas automaticamente na primeira conexão.
+
+Os testes do repositório PostgreSQL só são compilados com `-DDIARIO_WITH_POSTGRES=ON` e exigem um banco em `DIARIO_TEST_DATABASE_URL`:
+
+```bash
+cmake -S . -B build -DDIARIO_WITH_POSTGRES=ON
+cmake --build build
+DIARIO_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres ctest --test-dir build
+```
+
+## Docker
+
+```bash
+docker build -t diario-livros .
+docker run -p 8080:8080 -e DATABASE_URL="postgresql://..." diario-livros
+```
 
 ## API
 

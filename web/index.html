@@ -132,6 +132,33 @@
     color: var(--tinta-suave);
   }
   .vazio b { display: block; font-family: Fraunces, Georgia, serif; font-size: 20px; color: var(--tinta); margin-bottom: 4px; }
+
+  /* ---- Sugestões da Open Library ---- */
+  .combo { position: relative; }
+  .sugestoes {
+    position: absolute; z-index: 10; top: calc(100% + 4px); left: 0; right: 0;
+    margin: 0; padding: 4px; list-style: none;
+    background: var(--cartao); border: 1px solid var(--linha); border-radius: 8px; box-shadow: var(--sombra);
+    max-height: 360px; overflow-y: auto;
+  }
+  .sugestoes[hidden] { display: none; }
+  .sugestoes li {
+    display: flex; gap: 10px; align-items: center; padding: 6px 8px; border-radius: 6px; cursor: pointer;
+  }
+  .sugestoes li[aria-selected=true] { background: var(--papel-2); }
+  .sugestoes img, .sugestoes .sem-capa {
+    width: 32px; height: 48px; flex: 0 0 32px; object-fit: cover; border-radius: 3px;
+    background: var(--papel-2); border: 1px solid var(--linha);
+  }
+  .sugestoes .txt { min-width: 0; display: flex; flex-direction: column; }
+  .sugestoes .txt b { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sugestoes .txt span { font-size: 12px; color: var(--tinta-suave); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sugestoes .aviso { cursor: default; font-size: 13px; color: var(--tinta-suave); }
+
+  /* Data de lançamento só com o ano: pede para conferir dia e mês. */
+  input.conferir { border-color: var(--estrela); background: color-mix(in srgb, var(--estrela) 10%, var(--papel)); }
+  .dica { font-size: 12px; color: var(--estrela); margin: 4px 0 0; }
+  .dica[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -151,8 +178,12 @@
   <section class="painel" aria-labelledby="form-titulo">
     <h2 id="form-titulo">Registrar leitura</h2>
     <form id="form" novalidate>
-      <label for="titulo">Título</label>
-      <input type="text" id="titulo" required autocomplete="off">
+      <label for="titulo">Título <small>(digite para buscar)</small></label>
+      <div class="combo">
+        <input type="text" id="titulo" required autocomplete="off"
+               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="sugestoes">
+        <ul class="sugestoes" id="sugestoes" role="listbox" aria-label="Sugestões de livros" hidden></ul>
+      </div>
 
       <label for="autor">Autor</label>
       <input type="text" id="autor" required autocomplete="off">
@@ -168,7 +199,8 @@
       <div class="linha2">
         <div>
           <label for="dataLancamento">Lançamento</label>
-          <input type="date" id="dataLancamento">
+          <input type="date" id="dataLancamento" aria-describedby="dica-lancamento">
+          <p class="dica" id="dica-lancamento" hidden>Só sabemos o ano. Confira o dia e o mês.</p>
         </div>
         <div>
           <label for="dataLeitura">Lido em</label>
@@ -386,6 +418,7 @@ function editar(l) {
   capaDados = l.capaUrl.startsWith("data:") ? l.capaUrl : "";
   $("capaUrl").value = capaDados ? "" : l.capaUrl;
   $("dataLancamento").value = l.dataLancamento;
+  marcarLancamentoParaConferir(false);
   $("dataLeitura").value = l.dataLeitura;
   notaAtual = l.nota;
   $("erro").textContent = "";
@@ -425,6 +458,159 @@ $("form").onsubmit = async (e) => {
   }
 };
 $("btn-cancelar").onclick = limpar;
+
+// ---- Sugestões de livros (Open Library) -----------------------------------
+// Enquanto o usuário digita o título, busca livros na Open Library e, ao escolher
+// um, preenche título, autor, capa e ano de lançamento.
+const OPEN_LIBRARY = "https://openlibrary.org/search.json";
+let sugestoes = [];
+let destacada = -1;
+let buscaSugestoes;   // timer do debounce
+let requisicaoAtual;  // AbortController da busca em andamento
+
+function fecharSugestoes() {
+  clearTimeout(buscaSugestoes);
+  if (requisicaoAtual) requisicaoAtual.abort();
+  sugestoes = [];
+  destacada = -1;
+  $("sugestoes").hidden = true;
+  $("sugestoes").replaceChildren();
+  $("titulo").setAttribute("aria-expanded", "false");
+  $("titulo").removeAttribute("aria-activedescendant");
+}
+
+// Converte um resultado da Open Library para os campos do formulário.
+function livroDaOpenLibrary(doc) {
+  return {
+    titulo: doc.title || "",
+    autor: (doc.author_name || []).join(", "),
+    capaUrl: doc.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg` : "",
+    // A Open Library só informa o ano; usamos 1º de janeiro.
+    dataLancamento: doc.first_publish_year ? `${doc.first_publish_year}-01-01` : "",
+  };
+}
+
+async function buscarSugestoes(termo) {
+  if (requisicaoAtual) requisicaoAtual.abort();
+  requisicaoAtual = new AbortController();
+  const params = new URLSearchParams({
+    q: termo, limit: "10", fields: "title,author_name,first_publish_year,cover_i",
+  });
+  try {
+    const r = await fetch(`${OPEN_LIBRARY}?${params}`, { signal: requisicaoAtual.signal });
+    if (!r.ok) throw new Error(`Erro ${r.status}`);
+    const { docs = [] } = await r.json();
+    // Remove repetidos (mesma obra em várias edições) e fica com os 6 primeiros.
+    const vistos = new Set();
+    sugestoes = docs.map(livroDaOpenLibrary).filter((l) => {
+      const chave = `${l.titulo}|${l.autor}`.toLowerCase();
+      if (!l.titulo || vistos.has(chave)) return false;
+      vistos.add(chave);
+      return true;
+    }).slice(0, 6);
+    desenharSugestoes();
+  } catch (err) {
+    if (err.name === "AbortError") return;
+    sugestoes = [];
+    desenharSugestoes("Não foi possível buscar sugestões agora.");
+  }
+}
+
+function desenharSugestoes(aviso) {
+  const lista = $("sugestoes");
+  destacada = -1;
+  $("titulo").removeAttribute("aria-activedescendant");
+  if (!sugestoes.length) {
+    const li = document.createElement("li");
+    li.className = "aviso";
+    li.textContent = aviso || "Nenhum livro encontrado.";
+    lista.replaceChildren(li);
+  } else {
+    lista.replaceChildren(...sugestoes.map((l, i) => {
+      const li = document.createElement("li");
+      li.id = `sugestao-${i}`;
+      li.setAttribute("role", "option");
+      li.setAttribute("aria-selected", "false");
+      let capa;
+      if (l.capaUrl) {
+        capa = document.createElement("img");
+        capa.src = l.capaUrl.replace("-L.jpg", "-S.jpg");
+        capa.alt = "";
+        capa.loading = "lazy";
+      } else {
+        capa = document.createElement("div");
+        capa.className = "sem-capa";
+      }
+      const txt = document.createElement("div");
+      txt.className = "txt";
+      const t = document.createElement("b"); t.textContent = l.titulo;
+      const a = document.createElement("span");
+      a.textContent = [l.autor, l.dataLancamento.slice(0, 4)].filter(Boolean).join(" · ");
+      txt.append(t, a);
+      li.append(capa, txt);
+      // mousedown (e não click) para agir antes do blur do campo fechar a lista.
+      li.onmousedown = (e) => { e.preventDefault(); escolherSugestao(i); };
+      // Só movimento real do mouse: rolar a página também dispara mousemove.
+      li.onmousemove = (e) => { if (e.movementX || e.movementY) destacar(i); };
+      return li;
+    }));
+  }
+  lista.hidden = false;
+  $("titulo").setAttribute("aria-expanded", "true");
+}
+
+function destacar(i) {
+  const itens = $("sugestoes").querySelectorAll("[role=option]");
+  if (!itens.length) return;
+  destacada = (i + itens.length) % itens.length;
+  itens.forEach((li, j) => li.setAttribute("aria-selected", String(j === destacada)));
+  // Rola só a lista (scrollIntoView rolaria a página inteira).
+  const lista = $("sugestoes"), item = itens[destacada];
+  if (item.offsetTop < lista.scrollTop) lista.scrollTop = item.offsetTop;
+  else if (item.offsetTop + item.offsetHeight > lista.scrollTop + lista.clientHeight)
+    lista.scrollTop = item.offsetTop + item.offsetHeight - lista.clientHeight;
+  $("titulo").setAttribute("aria-activedescendant", itens[destacada].id);
+}
+
+function escolherSugestao(i) {
+  const l = sugestoes[i];
+  if (!l) return;
+  $("titulo").value = l.titulo;
+  $("autor").value = l.autor;
+  $("dataLancamento").value = l.dataLancamento;
+  marcarLancamentoParaConferir(Boolean(l.dataLancamento));
+  if (l.capaUrl) {
+    capaDados = "";
+    $("capaUrl").value = l.capaUrl;
+    mostrarPrevia(l.capaUrl);
+  }
+  fecharSugestoes();
+  $("dataLeitura").focus();
+}
+
+// Destaca o campo de lançamento quando a data veio só com o ano (dia e mês = 01/01).
+function marcarLancamentoParaConferir(ligado) {
+  $("dataLancamento").classList.toggle("conferir", ligado);
+  $("dica-lancamento").hidden = !ligado;
+}
+// Assim que o usuário mexe na data, o aviso some.
+$("dataLancamento").addEventListener("input", () => marcarLancamentoParaConferir(false));
+$("form").addEventListener("reset", () => marcarLancamentoParaConferir(false));
+
+$("titulo").oninput = () => {
+  clearTimeout(buscaSugestoes);
+  const termo = $("titulo").value.trim();
+  if (termo.length < 3) { fecharSugestoes(); return; }
+  buscaSugestoes = setTimeout(() => buscarSugestoes(termo), 300);
+};
+$("titulo").onkeydown = (e) => {
+  if ($("sugestoes").hidden) return;
+  if (e.key === "ArrowDown") { e.preventDefault(); destacar(destacada + 1); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); destacar(destacada - 1); }
+  else if (e.key === "Enter" && destacada >= 0) { e.preventDefault(); escolherSugestao(destacada); }
+  else if (e.key === "Escape") { fecharSugestoes(); }
+};
+$("titulo").onblur = fecharSugestoes;
 
 let debounce;
 $("busca").oninput = () => { clearTimeout(debounce); debounce = setTimeout(carregar, 200); };

@@ -171,6 +171,57 @@ jobs:
       - name: Coverage report
         run: gcovr build
 
+  # Testes end-to-end (Playwright) contra o servidor compilado, nos 3 sistemas.
+  e2e:
+    name: E2E · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    defaults:
+      run:
+        working-directory: e2e
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+
+      # Só o servidor: os testes de unidade já rodam no job build-and-test.
+      - name: Build server
+        working-directory: .
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DDIARIO_BUILD_TESTS=OFF
+          cmake --build build --config Release --parallel
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps --no-shell chromium
+
+      - name: Run e2e tests
+        run: npx playwright test
+
+      - name: Upload report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.os }}
+          path: |
+            e2e/playwright-report/
+            e2e/test-results/
+          retention-days: 7
+
   # Garante que a imagem de produção compila e que o servidor responde dentro dela.
   docker:
     name: Imagem Docker

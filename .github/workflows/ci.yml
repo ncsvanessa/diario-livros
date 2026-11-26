@@ -234,12 +234,20 @@ jobs:
       - name: Build image
         run: docker build -t diario-livros .
 
+      # Sobe o servidor, cria uma conta e usa a sessão: exercita Argon2 e o token
+      # assinado no binário de produção (Release), não só nos testes.
       - name: Smoke test
         run: |
-          docker run -d --name diario -p 8080:8080 diario-livros
+          docker run -d --name diario -p 8080:8080 -e SESSION_SECRET=segredo-so-para-o-smoke-test-do-ci diario-livros
           curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 \
-            http://localhost:8080/api/estatisticas
+            http://localhost:8080/api/saude
           curl --fail --silent --show-error -o /dev/null http://localhost:8080/
+          curl --fail --silent --show-error -D cabecalhos.txt -o /dev/null \
+            -H "Content-Type: application/json" -d '{"login":"smoke","senha":"senha-do-smoke-test"}' \
+            http://localhost:8080/api/cadastro
+          grep -i '^set-cookie: sessao=.*; Secure' cabecalhos.txt
+          cookie=$(grep -i '^set-cookie:' cabecalhos.txt | sed -E 's/^[Ss]et-[Cc]ookie: ([^;]*);.*/\1/')
+          curl --fail --silent --show-error -H "Cookie: $cookie" http://localhost:8080/api/livros
 
       - name: Container logs
         if: always()

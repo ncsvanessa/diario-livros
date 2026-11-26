@@ -85,11 +85,11 @@ O `main.cpp` só traduz entre o cpp-httplib e a classe `Api`. Toda a lógica das
 
 ## Uso de IA
 
-| Integrante | Ferramenta | Como contribuiu | O que foi revisado ou alterado |
-|---|---|---|---|
+| Integrante | Ferramenta | Como contribuiu
+|---|---|---|
 | Vanessa | Claude (Anthropic) | Plano de adaptação do sistema aos requisitos do TP; medição de cobertura com gcovr e CI nos 3 sistemas; persistência em PostgreSQL, `Dockerfile` e deploy (Render + Neon); contas de usuário (Argon2id, cookie de sessão assinado, extração da classe `Api`) com testes de unidade e e2e; revisão final do repositório |
-| Artur | [PREENCHER] | [PREENCHER] | [PREENCHER] |
-| Lucas | [PREENCHER] | [PREENCHER] | [PREENCHER] |
+| Artur | [PREENCHER] | [PREENCHER] |
+| Lucas | [PREENCHER] | [PREENCHER] |
 
 Como a IA foi usada no processo:
 
@@ -105,7 +105,7 @@ Requisitos: CMake 3.20+, um compilador C++17 (GCC, Clang ou MSVC), Git e, para o
 
 | Tipo | Quantidade | Ferramenta | Onde |
 |---|---|---|---|
-| Unidade | 206 casos (161 testes, alguns parametrizados) | GoogleTest | `tests/` |
+| Unidade | 246 casos (178 testes, alguns parametrizados) | GoogleTest | `tests/` |
 | Integração com PostgreSQL | 21 | GoogleTest | `tests/test_repositorio_postgres.cpp` |
 | End-to-end | 32 | Playwright | `e2e/tests/` |
 | Cobertura de linhas | ~95% (mínimo exigido: 80%) | gcovr | `gcovr.cfg` |

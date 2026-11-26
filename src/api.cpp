@@ -362,4 +362,38 @@ Resposta Api::alterarSeguir(const Requisicao& req, const std::string& login, boo
     }
 }
 
+// ---- Feed ---------------------------------------------------------------------
+
+Resposta Api::feed(const Requisicao& req) {
+    const auto eu = usuarioDaSessao(req);
+    if (!eu) return naoAutenticado();
+    try {
+        std::lock_guard<std::mutex> lock(mtx_);
+        struct Item {
+            std::string login;
+            Livro livro;
+        };
+        std::vector<Item> itens;
+        for (const int id : repo_.seguidos(*eu)) {
+            const auto usuario = repo_.buscarUsuarioPorId(id);
+            if (!usuario) continue;
+            for (const auto& livro : diarioDe(id).listar()) itens.push_back({usuario->login, livro});
+        }
+        // registradoEm em ISO: comparar o texto é comparar o instante. Livros antigos, sem
+        // registro (texto vazio), ficam no fim. Empates: o id maior foi adicionado depois.
+        std::sort(itens.begin(), itens.end(), [](const Item& a, const Item& b) {
+            if (a.livro.registradoEm != b.livro.registradoEm) return a.livro.registradoEm > b.livro.registradoEm;
+            if (a.login != b.login) return a.login < b.login;
+            return a.livro.id > b.livro.id;
+        });
+        if (itens.size() > kLimiteFeed) itens.resize(kLimiteFeed);
+
+        auto lista = json::array();
+        for (const auto& item : itens) lista.push_back({{"login", item.login}, {"livro", item.livro}});
+        return {200, lista, {}};
+    } catch (const std::runtime_error& e) {
+        return falhaNoArmazenamento(e);
+    }
+}
+
 }  // namespace diario

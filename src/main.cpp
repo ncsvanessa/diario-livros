@@ -147,6 +147,10 @@ int main(int argc, char** argv) {
         responder(res, api->criarLivro(converter(req)));
     });
 
+    srv.Get("/api/feed", [&](const httplib::Request& req, httplib::Response& res) {
+        responder(res, api->feed(converter(req)));
+    });
+
     srv.Get("/api/usuarios", [&](const httplib::Request& req, httplib::Response& res) {
         responder(res, api->buscarUsuarios(converter(req)));
     });

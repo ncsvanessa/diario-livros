@@ -73,7 +73,12 @@ public:
     Resposta seguir(const Requisicao& req, const std::string& login);
     Resposta deixarDeSeguir(const Requisicao& req, const std::string& login);
 
+    // Livros de quem o usuário segue, do registrado mais recentemente para o mais antigo,
+    // no máximo kLimiteFeed. Cada item: {"login": <dono>, "livro": {...}}.
+    Resposta feed(const Requisicao& req);
+
     static constexpr std::size_t kLimiteBuscaUsuarios = 20;
+    static constexpr std::size_t kLimiteFeed = 50;
 
 private:
     std::optional<int> usuarioDaSessao(const Requisicao& req) const;

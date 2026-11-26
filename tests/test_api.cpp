@@ -688,6 +688,101 @@ TEST_F(ApiTest, SeguirComFalhaNoArmazenamentoResponde503) {
     EXPECT_EQ(api.seguir(req(bia), "ana").status, 503);
 }
 
+// ---- Feed ---------------------------------------------------------------------
+
+namespace {
+
+std::vector<std::string> titulosDoFeed(const json& feed) {
+    std::vector<std::string> out;
+    for (const auto& item : feed) out.push_back(item.at("livro").at("titulo").get<std::string>());
+    return out;
+}
+
+}  // namespace
+
+TEST_F(ApiTest, FeedMostraLivrosDeQuemEuSigoComOLoginDoDono) {
+    const auto ana = entrarComo("ana");
+    const auto bia = entrarComo("bia");
+    api.criarLivro(req(ana, livro("Dom Casmurro", "Machado de Assis", 5)));
+    api.seguir(req(bia), "ana");
+
+    const auto r = api.feed(req(bia));
+
+    EXPECT_EQ(r.status, 200);
+    ASSERT_EQ(r.corpo.size(), 1u);
+    EXPECT_EQ(r.corpo[0].at("login"), "ana");
+    EXPECT_EQ(r.corpo[0].at("livro").at("titulo"), "Dom Casmurro");
+}
+
+TEST_F(ApiTest, FeedNaoMostraLivrosDeQuemNaoSigoNemOsMeus) {
+    const auto ana = entrarComo("ana");
+    const auto bia = entrarComo("bia");
+    api.criarLivro(req(ana, livro("Dom Casmurro", "Machado de Assis", 5)));
+    api.criarLivro(req(bia, livro("Iracema", "José de Alencar", 2)));
+
+    EXPECT_EQ(api.feed(req(bia)).corpo, json::array());
+}
+
+TEST_F(ApiTest, FeedMostraOsLivrosMaisRecentesPrimeiro) {
+    const auto ana = entrarComo("ana");
+    const auto caio = entrarComo("caio");
+    const auto bia = entrarComo("bia");
+    api.criarLivro(req(ana, livro("Primeiro", "A", 3)));
+    agora += std::chrono::minutes{1};
+    api.criarLivro(req(caio, livro("Segundo", "B", 3)));
+    agora += std::chrono::minutes{1};
+    api.criarLivro(req(ana, livro("Terceiro", "C", 3)));
+    api.seguir(req(bia), "ana");
+    api.seguir(req(bia), "caio");
+
+    EXPECT_EQ(titulosDoFeed(api.feed(req(bia)).corpo),
+              (std::vector<std::string>{"Terceiro", "Segundo", "Primeiro"}));
+}
+
+TEST_F(ApiTest, FeedMostraLivrosSemDataDeRegistroNoFim) {
+    const auto ana = entrarComo("ana");
+    const auto bia = entrarComo("bia");
+    // Livro salvo antes de existir registradoEm.
+    diario::Diario antigo;
+    antigo.adicionar(diario::Livro{0, "Antigo", "A", "", "", "", 3, ""});
+    repo.diarios[1] = antigo;
+    api.criarLivro(req(ana, livro("Novo", "B", 3)));
+    api.seguir(req(bia), "ana");
+
+    EXPECT_EQ(titulosDoFeed(api.feed(req(bia)).corpo), (std::vector<std::string>{"Novo", "Antigo"}));
+}
+
+TEST_F(ApiTest, FeedTemNoMaximoOLimite) {
+    const auto ana = entrarComo("ana");
+    const auto bia = entrarComo("bia");
+    for (std::size_t i = 0; i < Api::kLimiteFeed + 5; ++i) api.criarLivro(req(ana, livro("Livro", "A", 3)));
+    api.seguir(req(bia), "ana");
+
+    EXPECT_EQ(api.feed(req(bia)).corpo.size(), Api::kLimiteFeed);
+}
+
+TEST_F(ApiTest, FeedDeixaDeMostrarQuemDeixeiDeSeguir) {
+    const auto ana = entrarComo("ana");
+    const auto bia = entrarComo("bia");
+    api.criarLivro(req(ana, livro("Dom Casmurro", "Machado de Assis", 5)));
+    api.seguir(req(bia), "ana");
+
+    api.deixarDeSeguir(req(bia), "ana");
+
+    EXPECT_EQ(api.feed(req(bia)).corpo, json::array());
+}
+
+TEST_F(ApiTest, FeedSemSessaoResponde401) {
+    EXPECT_EQ(api.feed(req("")).status, 401);
+}
+
+TEST_F(ApiTest, FeedComFalhaNoArmazenamentoResponde503) {
+    const auto bia = entrarComo("bia");
+    repo.indisponivel = true;
+
+    EXPECT_EQ(api.feed(req(bia)).status, 503);
+}
+
 // ---- Carga do repositório -----------------------------------------------------
 
 TEST_F(ApiTest, LivrosJaSalvosNoRepositorioAparecemNaListagem) {

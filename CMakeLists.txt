@@ -130,7 +130,8 @@ if(DIARIO_BUILD_TESTS)
     tests/test_aleatorio.cpp
     tests/test_senha.cpp
     tests/test_sessao.cpp
-    tests/test_conta.cpp)
+    tests/test_conta.cpp
+    tests/test_api.cpp)
   target_link_libraries(diario_tests PRIVATE diario_core GTest::gtest_main)
 
   include(GoogleTest)

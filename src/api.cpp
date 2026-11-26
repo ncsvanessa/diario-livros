@@ -1,5 +1,6 @@
 #include "diario/api.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <ctime>
 #include <iostream>
@@ -289,6 +290,50 @@ Resposta Api::removerLivro(const Requisicao& req, int id) {
         repo_.salvarDiario(*usuario, novo);
         diario = std::move(novo);
         return {204, nullptr, {}};
+    } catch (const std::runtime_error& e) {
+        return falhaNoArmazenamento(e);
+    }
+}
+
+// ---- Pessoas ------------------------------------------------------------------
+
+Resposta Api::buscarUsuarios(const Requisicao& req) {
+    if (!usuarioDaSessao(req)) return naoAutenticado();
+    // Mesma normalização do cadastro: "  ANA " encontra "ana".
+    const auto trecho = normalizarLogin(parametro(req, "q"));
+    try {
+        std::lock_guard<std::mutex> lock(mtx_);
+        auto lista = json::array();
+        for (const auto& u : repo_.buscarUsuarios(trecho, kLimiteBuscaUsuarios)) {
+            lista.push_back({{"login", u.login}});  // nunca o hash da senha
+        }
+        return {200, lista, {}};
+    } catch (const std::runtime_error& e) {
+        return falhaNoArmazenamento(e);
+    }
+}
+
+Resposta Api::perfil(const Requisicao& req, const std::string& login) {
+    const auto eu = usuarioDaSessao(req);
+    if (!eu) return naoAutenticado();
+    try {
+        std::lock_guard<std::mutex> lock(mtx_);
+        const auto usuario = repo_.buscarUsuarioPorLogin(normalizarLogin(login));
+        if (!usuario) return erro(404, "usuário não encontrado");
+
+        const auto& diario = diarioDe(usuario->id);
+        const auto seguidores = repo_.seguidores(usuario->id);
+        const bool euSigo = std::find(seguidores.begin(), seguidores.end(), *eu) != seguidores.end();
+        return {200,
+                json{{"login", usuario->login},
+                     {"ehVoce", usuario->id == *eu},
+                     {"euSigo", euSigo},
+                     {"seguidores", seguidores.size()},
+                     {"seguindo", repo_.seguidos(usuario->id).size()},
+                     {"total", diario.tamanho()},
+                     {"media", diario.mediaNotas()},
+                     {"livros", diario.listar()}},
+                {}};
     } catch (const std::runtime_error& e) {
         return falhaNoArmazenamento(e);
     }

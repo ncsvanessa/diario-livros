@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -60,6 +61,14 @@ public:
     Resposta criarLivro(const Requisicao& req);
     Resposta atualizarLivro(const Requisicao& req, int id);
     Resposta removerLivro(const Requisicao& req, int id);
+
+    // Pessoas (exigem sessão). Todo diário é visível para qualquer usuário logado.
+    // ?q=<trecho do login>: até kLimiteBuscaUsuarios logins, em ordem alfabética.
+    Resposta buscarUsuarios(const Requisicao& req);
+    // Login, livros, estatísticas e contagem de seguidores de outro usuário; 404 se não existir.
+    Resposta perfil(const Requisicao& req, const std::string& login);
+
+    static constexpr std::size_t kLimiteBuscaUsuarios = 20;
 
 private:
     std::optional<int> usuarioDaSessao(const Requisicao& req) const;

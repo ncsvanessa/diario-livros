@@ -147,6 +147,15 @@ int main(int argc, char** argv) {
         responder(res, api->criarLivro(converter(req)));
     });
 
+    srv.Get("/api/usuarios", [&](const httplib::Request& req, httplib::Response& res) {
+        responder(res, api->buscarUsuarios(converter(req)));
+    });
+
+    // Mesmos caracteres aceitos no cadastro de login (ver validarCadastro).
+    srv.Get(R"(/api/usuarios/([a-z0-9._-]{1,30}))", [&](const httplib::Request& req, httplib::Response& res) {
+        responder(res, api->perfil(converter(req), req.matches[1]));
+    });
+
     // Ids com no máximo 9 dígitos cabem em int; um id maior não casa com a rota
     // e recebe 404, em vez de estourar std::stoi (std::out_of_range -> erro 500).
     srv.Put(R"(/api/livros/(\d{1,9}))", [&](const httplib::Request& req, httplib::Response& res) {

@@ -516,6 +516,109 @@ TEST_F(ApiComLivros, RemoverComFalhaAoGravarResponde503EMantemOLivro) {
     EXPECT_EQ(api.listarLivros(req(ana)).corpo.size(), 3u);
 }
 
+// ---- Busca de pessoas ---------------------------------------------------------
+
+TEST_F(ApiTest, BuscarUsuariosDevolveLoginsQueContemOTrecho) {
+    const auto ana = entrarComo("ana");
+    entrarComo("mariana");
+    entrarComo("bruno");
+
+    const auto r = api.buscarUsuarios(req(ana, nullptr, {{"q", "ana"}}));
+
+    EXPECT_EQ(r.status, 200);
+    EXPECT_EQ(r.corpo, json::parse(R"([{"login": "ana"}, {"login": "mariana"}])"));
+}
+
+TEST_F(ApiTest, BuscarUsuariosIgnoraMaiusculasEEspacosNasPontas) {
+    const auto ana = entrarComo("ana");
+    entrarComo("bruno");
+
+    const auto r = api.buscarUsuarios(req(ana, nullptr, {{"q", "  BRU "}}));
+
+    EXPECT_EQ(r.corpo, json::parse(R"([{"login": "bruno"}])"));
+}
+
+TEST_F(ApiTest, BuscarUsuariosSemTermoDevolveListaVazia) {
+    const auto ana = entrarComo("ana");
+
+    EXPECT_EQ(api.buscarUsuarios(req(ana)).corpo, json::array());
+}
+
+TEST_F(ApiTest, BuscarUsuariosDevolveNoMaximoOLimite) {
+    const auto ana = entrarComo("ana");
+    for (int i = 0; i < 25; ++i) entrarComo("leitor" + std::to_string(i));
+
+    const auto r = api.buscarUsuarios(req(ana, nullptr, {{"q", "leitor"}}));
+
+    EXPECT_EQ(r.corpo.size(), Api::kLimiteBuscaUsuarios);
+}
+
+TEST_F(ApiTest, BuscarUsuariosSemSessaoResponde401) {
+    entrarComo("ana");
+
+    EXPECT_EQ(api.buscarUsuarios(req("", nullptr, {{"q", "ana"}})).status, 401);
+}
+
+// ---- Perfil -------------------------------------------------------------------
+
+TEST_F(ApiComLivros, PerfilDeOutroUsuarioMostraOsLivrosEAsEstatisticasDele) {
+    const auto bia = entrarComo("bia");
+
+    const auto r = api.perfil(req(bia), "ana");
+
+    EXPECT_EQ(r.status, 200);
+    EXPECT_EQ(r.corpo.at("login"), "ana");
+    EXPECT_EQ(r.corpo.at("total"), 3);
+    EXPECT_DOUBLE_EQ(r.corpo.at("media").get<double>(), 11.0 / 3);
+    EXPECT_EQ(titulos(r.corpo.at("livros")),
+              (std::vector<std::string>{"Dom Casmurro", "Iracema", "Memórias Póstumas"}));
+    EXPECT_EQ(r.corpo.at("ehVoce"), false);
+}
+
+TEST_F(ApiComLivros, PerfilNaoExpoeOHashDaSenha) {
+    const auto r = api.perfil(req(entrarComo("bia")), "ana");
+
+    EXPECT_FALSE(r.corpo.contains("senhaHash"));
+    EXPECT_EQ(r.corpo.dump().find("argon2id"), std::string::npos);
+}
+
+TEST_F(ApiComLivros, PerfilMostraSeguidoresSeguindoESeEuSigo) {
+    const auto bia = entrarComo("bia");  // id 2; ana é o id 1
+    entrarComo("caio");                  // id 3
+    repo.seguir(2, 1);
+    repo.seguir(3, 1);
+    repo.seguir(1, 3);
+
+    const auto r = api.perfil(req(bia), "ana");
+
+    EXPECT_EQ(r.corpo.at("seguidores"), 2);
+    EXPECT_EQ(r.corpo.at("seguindo"), 1);
+    EXPECT_EQ(r.corpo.at("euSigo"), true);
+}
+
+TEST_F(ApiComLivros, PerfilDeQuemNaoSigoIndicaQueNaoSigo) {
+    EXPECT_EQ(api.perfil(req(entrarComo("bia")), "ana").corpo.at("euSigo"), false);
+}
+
+TEST_F(ApiComLivros, PerfilProprioIndicaQueEhVoce) {
+    EXPECT_EQ(api.perfil(req(ana), "ana").corpo.at("ehVoce"), true);
+}
+
+TEST_F(ApiTest, PerfilDeUsuarioInexistenteResponde404) {
+    EXPECT_EQ(api.perfil(req(entrarComo("ana")), "ninguem").status, 404);
+}
+
+TEST_F(ApiComLivros, PerfilSemSessaoResponde401) {
+    EXPECT_EQ(api.perfil(req(""), "ana").status, 401);
+}
+
+TEST_F(ApiComLivros, PerfilComFalhaNoArmazenamentoResponde503) {
+    const auto bia = entrarComo("bia");
+    repo.indisponivel = true;
+
+    EXPECT_EQ(api.perfil(req(bia), "ana").status, 503);
+}
+
 // ---- Carga do repositório -----------------------------------------------------
 
 TEST_F(ApiTest, LivrosJaSalvosNoRepositorioAparecemNaListagem) {

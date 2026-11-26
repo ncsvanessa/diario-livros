@@ -68,6 +68,11 @@ public:
     // Login, livros, estatísticas e contagem de seguidores de outro usuário; 404 se não existir.
     Resposta perfil(const Requisicao& req, const std::string& login);
 
+    // Seguir e deixar de seguir `login`. Respondem {"euSigo", "seguidores"} já atualizados.
+    // Repetir não é erro. 404 se o usuário não existir; 400 ao tentar seguir a si mesmo.
+    Resposta seguir(const Requisicao& req, const std::string& login);
+    Resposta deixarDeSeguir(const Requisicao& req, const std::string& login);
+
     static constexpr std::size_t kLimiteBuscaUsuarios = 20;
 
 private:
@@ -76,6 +81,8 @@ private:
     // Diário do usuário em memória, carregado do repositório no primeiro acesso.
     // Chamar com mtx_ travado.
     Diario& diarioDe(int usuarioId);
+    // Parte comum de seguir e deixarDeSeguir.
+    Resposta alterarSeguir(const Requisicao& req, const std::string& login, bool seguir);
 
     Repositorio& repo_;
     OpcoesApi opcoes_;

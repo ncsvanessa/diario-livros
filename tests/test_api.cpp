@@ -619,6 +619,75 @@ TEST_F(ApiComLivros, PerfilComFalhaNoArmazenamentoResponde503) {
     EXPECT_EQ(api.perfil(req(bia), "ana").status, 503);
 }
 
+// ---- Seguir -------------------------------------------------------------------
+
+TEST_F(ApiTest, SeguirFazOUsuarioAparecerComoSeguidor) {
+    entrarComo("ana");
+    const auto bia = entrarComo("bia");
+
+    const auto r = api.seguir(req(bia), "ana");
+
+    EXPECT_EQ(r.status, 200);
+    EXPECT_EQ(r.corpo, json::parse(R"({"euSigo": true, "seguidores": 1})"));
+    EXPECT_EQ(api.perfil(req(bia), "ana").corpo.at("euSigo"), true);
+}
+
+TEST_F(ApiTest, SeguirDuasVezesContaUmSeguidorSo) {
+    entrarComo("ana");
+    const auto bia = entrarComo("bia");
+
+    api.seguir(req(bia), "ana");
+    const auto r = api.seguir(req(bia), "ana");
+
+    EXPECT_EQ(r.status, 200);
+    EXPECT_EQ(r.corpo.at("seguidores"), 1);
+}
+
+TEST_F(ApiTest, DeixarDeSeguirRemoveOSeguidor) {
+    entrarComo("ana");
+    const auto bia = entrarComo("bia");
+    api.seguir(req(bia), "ana");
+
+    const auto r = api.deixarDeSeguir(req(bia), "ana");
+
+    EXPECT_EQ(r.status, 200);
+    EXPECT_EQ(r.corpo, json::parse(R"({"euSigo": false, "seguidores": 0})"));
+}
+
+TEST_F(ApiTest, DeixarDeSeguirQuemNaoSigoNaoEhErro) {
+    entrarComo("ana");
+
+    EXPECT_EQ(api.deixarDeSeguir(req(entrarComo("bia")), "ana").status, 200);
+}
+
+TEST_F(ApiTest, SeguirASiMesmoResponde400) {
+    const auto ana = entrarComo("ana");
+
+    const auto r = api.seguir(req(ana), "ana");
+
+    EXPECT_EQ(r.status, 400);
+    EXPECT_TRUE(repo.seguidores(1).empty());
+}
+
+TEST_F(ApiTest, SeguirUsuarioInexistenteResponde404) {
+    EXPECT_EQ(api.seguir(req(entrarComo("ana")), "ninguem").status, 404);
+}
+
+TEST_F(ApiTest, SeguirSemSessaoResponde401) {
+    entrarComo("ana");
+
+    EXPECT_EQ(api.seguir(req(""), "ana").status, 401);
+    EXPECT_EQ(api.deixarDeSeguir(req(""), "ana").status, 401);
+}
+
+TEST_F(ApiTest, SeguirComFalhaNoArmazenamentoResponde503) {
+    entrarComo("ana");
+    const auto bia = entrarComo("bia");
+    repo.indisponivel = true;
+
+    EXPECT_EQ(api.seguir(req(bia), "ana").status, 503);
+}
+
 // ---- Carga do repositório -----------------------------------------------------
 
 TEST_F(ApiTest, LivrosJaSalvosNoRepositorioAparecemNaListagem) {

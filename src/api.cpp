@@ -339,4 +339,27 @@ Resposta Api::perfil(const Requisicao& req, const std::string& login) {
     }
 }
 
+Resposta Api::seguir(const Requisicao& req, const std::string& login) { return alterarSeguir(req, login, true); }
+
+Resposta Api::deixarDeSeguir(const Requisicao& req, const std::string& login) {
+    return alterarSeguir(req, login, false);
+}
+
+Resposta Api::alterarSeguir(const Requisicao& req, const std::string& login, bool seguir) {
+    const auto eu = usuarioDaSessao(req);
+    if (!eu) return naoAutenticado();
+    try {
+        std::lock_guard<std::mutex> lock(mtx_);
+        const auto alvo = repo_.buscarUsuarioPorLogin(normalizarLogin(login));
+        if (!alvo) return erro(404, "usuário não encontrado");
+        if (alvo->id == *eu) return erro(400, "você não pode seguir a si mesmo");
+
+        if (seguir) repo_.seguir(*eu, alvo->id);
+        else repo_.deixarDeSeguir(*eu, alvo->id);
+        return {200, json{{"euSigo", seguir}, {"seguidores", repo_.seguidores(alvo->id).size()}}, {}};
+    } catch (const std::runtime_error& e) {
+        return falhaNoArmazenamento(e);
+    }
+}
+
 }  // namespace diario

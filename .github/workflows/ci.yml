@@ -254,3 +254,23 @@ jobs:
       - name: Container logs
         if: always()
         run: docker logs diario || true
+
+
+  # Deploy no Render só depois que todos os jobs acima passarem, e só para pushes na main.
+  # O deploy hook (URL secreta) fica em Settings > Secrets and variables > Actions.
+  deploy:
+    name: Deploy (Render)
+    needs: [build-and-test, coverage-linux, coverage, coverage-windows, e2e, docker]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Dispara o deploy
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "Secret RENDER_DEPLOY_HOOK_URL não configurado"; exit 1
+          fi
+          curl --fail --silent --show-error --output /dev/null "$RENDER_DEPLOY_HOOK_URL"
+          echo "Deploy solicitado ao Render"

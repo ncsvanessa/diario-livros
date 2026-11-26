@@ -5,23 +5,19 @@
 // (exige build com DIARIO_WITH_POSTGRES=ON); senão, o arquivo indicado em --dados.
 // A URL vem do ambiente, e não de um argumento, porque contém a senha do banco.
 
-#include <cctype>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
 #include <string>
 
 #include <httplib.h>
 
-#include "diario/diario.hpp"
+#include "diario/api.hpp"
 #include "diario/repositorio.hpp"
 #ifdef DIARIO_COM_POSTGRES
 #include "diario/repositorio_postgres.hpp"
 #endif
-
-using nlohmann::json;
 
 namespace {
 
@@ -58,19 +54,17 @@ std::unique_ptr<diario::Repositorio> criarRepositorio(const Config& cfg) {
 #endif
 }
 
-void responderJson(httplib::Response& res, const json& corpo, int status = 200) {
-    res.status = status;
-    res.set_content(corpo.dump(), "application/json; charset=utf-8");
+diario::Requisicao converter(const httplib::Request& req) {
+    diario::Requisicao r;
+    // emplace mantém o primeiro valor de um parâmetro repetido, como get_param_value.
+    for (const auto& [nome, valor] : req.params) r.parametros.emplace(nome, valor);
+    r.corpo = req.body;
+    return r;
 }
 
-void responderErro(httplib::Response& res, int status, const std::string& msg) {
-    responderJson(res, json{{"erro", msg}}, status);
-}
-
-// Falha de gravação (ex.: banco fora do ar) é problema do servidor, não do pedido.
-void responderFalhaAoSalvar(httplib::Response& res, const std::exception& e) {
-    std::cerr << "Erro ao salvar: " << e.what() << '\n';
-    responderErro(res, 503, "não foi possível salvar; tente novamente");
+void responder(httplib::Response& res, const diario::Resposta& r) {
+    res.status = r.status;
+    if (!r.corpo.is_null()) res.set_content(r.corpo.dump(), "application/json; charset=utf-8");
 }
 
 }  // namespace
@@ -79,17 +73,15 @@ int main(int argc, char** argv) {
     const Config cfg = lerArgs(argc, argv);
 
     std::unique_ptr<diario::Repositorio> repo;
-    diario::Diario dl;
+    std::unique_ptr<diario::Api> api;
     try {
         repo = criarRepositorio(cfg);
-        dl = repo->carregar();
+        api = std::make_unique<diario::Api>(*repo);
     } catch (const std::exception& e) {
         std::cerr << "Erro ao carregar os dados: " << e.what() << '\n';
         return 1;
     }
 
-    // httplib atende requisições em várias threads; o diário não é thread-safe.
-    std::mutex mtx;
     httplib::Server srv;
 
     // Capas podem vir como data:image em base64 (upload local).
@@ -100,106 +92,27 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // As regras de cada rota ficam em diario::Api (testada por unidade); aqui só a ligação HTTP.
     srv.Get("/api/livros", [&](const httplib::Request& req, httplib::Response& res) {
-        const auto termo = req.get_param_value("q");
-        const auto ordem = req.get_param_value("ordem");
-        const auto notaMin = req.get_param_value("notaMin");
-        // Aceita só um dígito; o intervalo 0 a 5 é validado pelo núcleo.
-        if (!notaMin.empty() && (notaMin.size() != 1 || !std::isdigit(static_cast<unsigned char>(notaMin[0])))) {
-            responderErro(res, 400, "notaMin deve ser um inteiro de 0 a 5");
-            return;
-        }
-
-        std::lock_guard<std::mutex> lock(mtx);
-        auto livros = ordem == "nota" ? dl.ordenadosPorNota() : dl.listar();
-        try {
-            // Cada filtro devolve um subconjunto; mantém só os livros presentes nele,
-            // preservando a ordenação escolhida.
-            const auto manterSo = [&livros](const std::vector<diario::Livro>& filtrados) {
-                std::vector<diario::Livro> out;
-                for (const auto& l : livros) {
-                    for (const auto& f : filtrados) {
-                        if (f.id == l.id) { out.push_back(l); break; }
-                    }
-                }
-                livros = std::move(out);
-            };
-            if (!termo.empty()) manterSo(dl.pesquisar(termo));
-            if (!notaMin.empty()) manterSo(dl.comNotaMinima(notaMin[0] - '0'));
-        } catch (const std::invalid_argument& e) {
-            responderErro(res, 400, e.what());
-            return;
-        }
-        responderJson(res, livros);
+        responder(res, api->listarLivros(converter(req)));
     });
 
-    srv.Get("/api/estatisticas", [&](const httplib::Request&, httplib::Response& res) {
-        std::lock_guard<std::mutex> lock(mtx);
-        responderJson(res, json{{"total", dl.tamanho()},
-                                {"media", dl.mediaNotas()},
-                                {"autoresMaisLidos", dl.autoresMaisLidos(3)}});
+    srv.Get("/api/estatisticas", [&](const httplib::Request& req, httplib::Response& res) {
+        responder(res, api->estatisticas(converter(req)));
     });
 
     srv.Post("/api/livros", [&](const httplib::Request& req, httplib::Response& res) {
-        try {
-            auto livro = json::parse(req.body).get<diario::Livro>();
-            std::lock_guard<std::mutex> lock(mtx);
-            // Altera uma cópia e só a adota depois de salvar: se a gravação falhar,
-            // a memória continua igual ao que está persistido.
-            auto novo = dl;
-            const int id = novo.adicionar(std::move(livro));
-            repo->salvar(novo);
-            dl = std::move(novo);
-            responderJson(res, *dl.buscar(id), 201);
-        } catch (const std::invalid_argument& e) {
-            responderErro(res, 400, e.what());
-        } catch (const json::exception&) {
-            responderErro(res, 400, "JSON inválido");
-        } catch (const std::runtime_error& e) {
-            responderFalhaAoSalvar(res, e);
-        }
+        responder(res, api->criarLivro(converter(req)));
     });
 
     // Ids com no máximo 9 dígitos cabem em int; um id maior não casa com a rota
     // e recebe 404, em vez de estourar std::stoi (std::out_of_range -> erro 500).
     srv.Put(R"(/api/livros/(\d{1,9}))", [&](const httplib::Request& req, httplib::Response& res) {
-        const int id = std::stoi(req.matches[1]);
-        try {
-            auto livro = json::parse(req.body).get<diario::Livro>();
-            std::lock_guard<std::mutex> lock(mtx);
-            auto novo = dl;
-            if (!novo.atualizar(id, std::move(livro))) {
-                responderErro(res, 404, "livro não encontrado");
-                return;
-            }
-            repo->salvar(novo);
-            dl = std::move(novo);
-            responderJson(res, *dl.buscar(id));
-        } catch (const std::invalid_argument& e) {
-            responderErro(res, 400, e.what());
-        } catch (const json::exception&) {
-            responderErro(res, 400, "JSON inválido");
-        } catch (const std::runtime_error& e) {
-            responderFalhaAoSalvar(res, e);
-        }
+        responder(res, api->atualizarLivro(converter(req), std::stoi(req.matches[1])));
     });
 
     srv.Delete(R"(/api/livros/(\d{1,9}))", [&](const httplib::Request& req, httplib::Response& res) {
-        const int id = std::stoi(req.matches[1]);
-        std::lock_guard<std::mutex> lock(mtx);
-        auto novo = dl;
-        if (!novo.remover(id)) {
-            responderErro(res, 404, "livro não encontrado");
-            return;
-        }
-        try {
-            repo->salvar(novo);
-        } catch (const std::runtime_error& e) {
-            responderFalhaAoSalvar(res, e);
-            return;
-        }
-        dl = std::move(novo);
-        res.status = 204;
+        responder(res, api->removerLivro(converter(req), std::stoi(req.matches[1])));
     });
 
     // Não imprime a DATABASE_URL: ela contém a senha e iria para os logs da plataforma.

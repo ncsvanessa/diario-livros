@@ -53,7 +53,8 @@ add_library(diario_core
   src/aleatorio.cpp
   src/senha.cpp
   src/sessao.cpp
-  src/conta.cpp)
+  src/conta.cpp
+  src/api.cpp)
 target_include_directories(diario_core PUBLIC include)
 target_link_libraries(diario_core PUBLIC nlohmann_json::nlohmann_json)
 # BCryptGenRandom (gerador aleatório do Windows) fica em bcrypt.lib.

@@ -185,6 +185,20 @@
   .acesso .regras { font-size: 12px; color: var(--tinta-suave); margin: 4px 0 0; }
   .alternar { font-size: 13px; color: var(--tinta-suave); margin: 16px 0 0; text-align: center; }
 
+  /* ---- Navegação entre seções ---- */
+  .abas {
+    max-width: 1120px; margin: 12px auto 0; padding: 0 20px;
+    display: flex; gap: 4px; border-bottom: 1px solid var(--linha);
+  }
+  .abas a {
+    padding: 10px 14px; margin-bottom: -1px; border-bottom: 2px solid transparent;
+    color: var(--tinta-suave); font-weight: 600; font-size: 14px; text-decoration: none;
+  }
+  .abas a:hover { color: var(--tinta); }
+  .abas a[aria-current=page] { color: var(--acento); border-bottom-color: var(--acento); }
+  .secao { max-width: 1120px; margin: 0 auto; padding: 20px; }
+  .secao h2 { font-family: Fraunces, Georgia, serif; font-size: 24px; margin: 0 0 16px; }
+
   /* Data de lançamento só com o ano: pede para conferir dia e mês. */
   input.conferir { border-color: var(--estrela); background: color-mix(in srgb, var(--estrela) 10%, var(--papel)); }
   .dica { font-size: 12px; color: var(--estrela); margin: 4px 0 0; }
@@ -232,6 +246,12 @@
     </form>
   </div>
 </section>
+
+<nav class="abas" id="abas" aria-label="Seções" hidden>
+  <a href="#/diario" data-secao="diario">Meu diário</a>
+  <a href="#/feed" data-secao="feed">Feed</a>
+  <a href="#/pessoas" data-secao="pessoas">Pessoas</a>
+</nav>
 
 <main id="diario" hidden>
   <div class="lateral">
@@ -305,6 +325,15 @@
     <div class="grade" id="grade"></div>
   </section>
 </main>
+
+<section class="secao" id="feed" aria-labelledby="feed-titulo" hidden>
+  <h2 id="feed-titulo">Feed</h2>
+  <div class="vazio"><b>Nada por aqui ainda</b>Siga pessoas para ver o que elas estão lendo.</div>
+</section>
+
+<section class="secao" id="pessoas" aria-labelledby="pessoas-titulo" hidden>
+  <h2 id="pessoas-titulo">Pessoas</h2>
+</section>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -404,7 +433,8 @@ function definirModoAcesso(modo) {
 
 function mostrarAcesso() {
   // Esconde e esvazia o diário: os livros de quem saiu não ficam na página.
-  $("diario").hidden = true;
+  $("abas").hidden = true;
+  for (const s of SECOES) $(s).hidden = true;
   $("stats").hidden = true;
   $("conta").hidden = true;
   $("grade").replaceChildren();
@@ -416,12 +446,36 @@ function mostrarAcesso() {
 function entrouComo(login) {
   $("usuario-login").textContent = login;
   $("acesso").hidden = true;
-  $("diario").hidden = false;
+  $("abas").hidden = false;
   $("stats").hidden = false;
   $("conta").hidden = false;
   limpar();
   carregar();
+  mostrarSecao();
 }
+
+// ---- Navegação: Meu diário, Feed e Pessoas ----------------------------------
+// A seção fica no endereço (#/feed, #/pessoas): recarregar a página ou usar o botão
+// voltar do navegador mantém a seção certa. A barra em "#/" evita que o navegador
+// role a página até o elemento de mesmo id.
+const SECOES = ["diario", "feed", "pessoas"];
+
+function secaoAtual() {
+  const s = location.hash.replace(/^#\/?/, "");
+  return SECOES.includes(s) ? s : "diario";
+}
+
+function mostrarSecao() {
+  if (!$("conta").hidden) {
+    const atual = secaoAtual();
+    for (const s of SECOES) $(s).hidden = s !== atual;
+    for (const a of $("abas").querySelectorAll("a")) {
+      if (a.dataset.secao === atual) a.setAttribute("aria-current", "page");
+      else a.removeAttribute("aria-current");
+    }
+  }
+}
+window.addEventListener("hashchange", mostrarSecao);
 
 $("btn-alternar").onclick = () => definirModoAcesso(modoAcesso === "entrar" ? "cadastrar" : "entrar");
 

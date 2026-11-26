@@ -16,7 +16,7 @@ Trabalho prático de Engenharia de Software II (DCC/UFMG).
 
 ## Integrantes
 
-- Artur Fonseca Souza
+- Artur Fonseca Souza - 2022035520
 - Lucas Dolabella de Castro Lopes - 2023001549
 - Vanessa Nascimento Silva - 202300186
  

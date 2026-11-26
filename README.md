@@ -53,6 +53,28 @@ cmake --build build
 DIARIO_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres ctest --test-dir build
 ```
 
+## Testes end-to-end (Playwright)
+
+Os testes e2e ficam em `e2e/` e usam o navegador (Chromium) contra o servidor C++ de verdade. O Playwright sobe o `diario_server` sozinho, na porta 8089 e com um arquivo de dados temporário, então o seu `diario.json` não é tocado. A Open Library é simulada, e os testes não dependem da internet.
+
+Requisito: Node.js 18+ e o servidor já compilado (veja "Como rodar").
+
+```bash
+cd e2e
+npm ci
+npx playwright install --with-deps --no-shell chromium
+npx playwright test             # modo headless
+npx playwright test --headed    # vendo o navegador
+npx playwright test --ui        # modo interativo
+```
+
+| Arquivo | Cenários |
+|---|---|
+| `e2e/tests/cadastro.spec.ts` | adicionar livro, validação de campos obrigatórios e de datas, persistência após recarregar |
+| `e2e/tests/edicao.spec.ts` | editar, cancelar edição, remover e recusar remoção |
+| `e2e/tests/busca.spec.ts` | busca por autor, busca sem resultado, ordenação por nota, busca + ordenação |
+| `e2e/tests/sugestoes.spec.ts` | sugestões da Open Library (simulada) e falha da API externa |
+
 ## Docker
 
 ```bash

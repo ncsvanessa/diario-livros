@@ -13,13 +13,17 @@ namespace diario {
 class RepositorioPostgres : public Repositorio {
 public:
     // `url` no formato postgresql://usuario:senha@host:porta/banco?sslmode=require.
-    // Conecta e cria as tabelas se necessário; lança std::runtime_error se falhar.
+    // Conecta e cria as tabelas se necessário. Lança std::runtime_error se não conseguir
+    // conectar ou se o banco ainda tiver o esquema antigo, sem usuários.
     explicit RepositorioPostgres(std::string url);
 
-    Diario carregar() override;
+    int criarUsuario(const std::string& login, const std::string& senhaHash) override;
+    std::optional<Usuario> buscarUsuarioPorLogin(const std::string& login) override;
+    std::optional<Usuario> buscarUsuarioPorId(int id) override;
+    Diario carregarDiario(int usuarioId) override;
 
-    // Regrava todos os livros numa única transação: ou tudo é salvo, ou nada muda.
-    void salvar(const Diario& diario) override;
+    // Regrava os livros do usuário numa única transação: ou tudo é salvo, ou nada muda.
+    void salvarDiario(int usuarioId, const Diario& diario) override;
 
 private:
     std::string url_;

@@ -139,7 +139,8 @@ if(DIARIO_BUILD_TESTS)
 
   if(DIARIO_WITH_POSTGRES)
     add_executable(diario_tests_postgres tests/test_repositorio_postgres.cpp)
-    target_link_libraries(diario_tests_postgres PRIVATE diario_postgres GTest::gtest_main)
+    # libpq direto: um teste monta o esquema antigo do banco para verificar a detecção.
+    target_link_libraries(diario_tests_postgres PRIVATE diario_postgres PostgreSQL::PostgreSQL GTest::gtest_main)
     # Os testes compartilham um único banco: RESOURCE_LOCK impede que rodem em paralelo (ctest -j).
     gtest_discover_tests(diario_tests_postgres PROPERTIES RESOURCE_LOCK postgres)
   endif()

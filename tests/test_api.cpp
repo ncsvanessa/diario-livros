@@ -1,3 +1,5 @@
+#include <chrono>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -7,18 +9,23 @@
 #include "repositorio_memoria.hpp"
 
 using diario::Api;
+using diario::OpcoesApi;
 using diario::Requisicao;
+using diario::Resposta;
 using diario::teste::RepositorioMemoria;
 using nlohmann::json;
+using namespace std::chrono_literals;
 
 namespace {
 
-Requisicao comCorpo(const json& corpo) { return {{}, corpo.dump()}; }
-
-Requisicao comParametros(std::map<std::string, std::string> parametros) { return {std::move(parametros), ""}; }
+const std::string kSegredo = "segredo-de-teste-com-mais-de-32-caracteres";
 
 json livro(const std::string& titulo, const std::string& autor, int nota) {
     return json{{"titulo", titulo}, {"autor", autor}, {"nota", nota}};
+}
+
+json credenciais(const std::string& login, const std::string& senha) {
+    return json{{"login", login}, {"senha", senha}};
 }
 
 std::vector<std::string> titulos(const json& livros) {
@@ -27,71 +34,334 @@ std::vector<std::string> titulos(const json& livros) {
     return out;
 }
 
-// Api sobre um repositório em memória, já com três livros cadastrados pela própria Api.
-class ApiComLivros : public ::testing::Test {
+// "sessao=TOKEN; Path=/; ..." (Set-Cookie) -> "sessao=TOKEN" (como o navegador devolve em Cookie).
+std::string cookieDe(const Resposta& r) {
+    const auto& setCookie = r.cookies.at(0);
+    return setCookie.substr(0, setCookie.find(';'));
+}
+
+// Api sobre um repositório em memória, com relógio controlado pelo teste.
+class ApiTest : public ::testing::Test {
 protected:
-    void SetUp() override {
-        api.criarLivro(comCorpo(livro("Dom Casmurro", "Machado de Assis", 5)));
-        api.criarLivro(comCorpo(livro("Iracema", "José de Alencar", 2)));
-        api.criarLivro(comCorpo(livro("Memórias Póstumas", "Machado de Assis", 4)));
+    ApiTest() : api(repo, OpcoesApi{kSegredo, false, [this] { return agora; }}) {}
+
+    // Cadastra um usuário e devolve o cookie da sessão dele.
+    std::string entrarComo(const std::string& login) {
+        const auto r = api.cadastrar({{}, credenciais(login, "senha-de-teste").dump(), ""});
+        return cookieDe(r);
+    }
+
+    Requisicao req(const std::string& cookie, const json& corpo = nullptr,
+                   std::map<std::string, std::string> parametros = {}) {
+        return {std::move(parametros), corpo.is_null() ? "" : corpo.dump(), cookie};
     }
 
     RepositorioMemoria repo;
-    Api api{repo};
+    diario::AssinadorSessao::Instante agora{std::chrono::seconds{1'800'000'000}};
+    Api api;
+};
+
+// Usuária "ana" logada, com três livros cadastrados pela própria Api.
+class ApiComLivros : public ApiTest {
+protected:
+    void SetUp() override {
+        ana = entrarComo("ana");
+        api.criarLivro(req(ana, livro("Dom Casmurro", "Machado de Assis", 5)));
+        api.criarLivro(req(ana, livro("Iracema", "José de Alencar", 2)));
+        api.criarLivro(req(ana, livro("Memórias Póstumas", "Machado de Assis", 4)));
+    }
+
+    std::string ana;
 };
 
 }  // namespace
 
+// ---- Cadastro -----------------------------------------------------------------
+
+TEST_F(ApiTest, CadastroValidoResponde201ComOLogin) {
+    const auto r = api.cadastrar(req("", credenciais("ana", "senha-segura")));
+
+    EXPECT_EQ(r.status, 201);
+    EXPECT_EQ(r.corpo.at("login"), "ana");
+}
+
+TEST_F(ApiTest, CadastroJaDeixaOUsuarioLogado) {
+    const auto r = api.cadastrar(req("", credenciais("ana", "senha-segura")));
+
+    EXPECT_EQ(api.usuarioAtual(req(cookieDe(r))).corpo.at("login"), "ana");
+}
+
+TEST_F(ApiTest, CadastroNormalizaOLogin) {
+    const auto r = api.cadastrar(req("", credenciais("  Ana ", "senha-segura")));
+
+    EXPECT_EQ(r.corpo.at("login"), "ana");
+}
+
+TEST_F(ApiTest, CadastroNaoGuardaASenhaEmTextoPuro) {
+    api.cadastrar(req("", credenciais("ana", "senha-segura")));
+
+    EXPECT_EQ(repo.usuarios.at(1).senhaHash.find("senha-segura"), std::string::npos);
+}
+
+TEST_F(ApiTest, CadastroComLoginEmUsoResponde409) {
+    api.cadastrar(req("", credenciais("ana", "senha-segura")));
+
+    const auto r = api.cadastrar(req("", credenciais("ANA", "outra-senha-123")));
+
+    EXPECT_EQ(r.status, 409);
+}
+
+TEST_F(ApiTest, CadastroComSenhaCurtaResponde400SemCriarConta) {
+    const auto r = api.cadastrar(req("", credenciais("ana", "curta")));
+
+    EXPECT_EQ(r.status, 400);
+    EXPECT_TRUE(repo.usuarios.empty());
+}
+
+TEST_F(ApiTest, CadastroComArmazenamentoIndisponivelResponde503) {
+    repo.indisponivel = true;
+
+    const auto r = api.cadastrar(req("", credenciais("ana", "senha-segura")));
+
+    EXPECT_EQ(r.status, 503);
+}
+
+class CorpoDeCredenciaisInvalido : public ApiTest, public ::testing::WithParamInterface<std::string> {};
+
+TEST_P(CorpoDeCredenciaisInvalido, CadastroResponde400JsonInvalido) {
+    const auto r = api.cadastrar({{}, GetParam(), ""});
+
+    EXPECT_EQ(r.status, 400);
+    EXPECT_EQ(r.corpo.at("erro"), "JSON inválido");
+}
+
+INSTANTIATE_TEST_SUITE_P(Casos, CorpoDeCredenciaisInvalido,
+                         ::testing::Values("",                                   // vazio
+                                           "{",                                  // incompleto
+                                           "[\"ana\", \"senha\"]",               // não é objeto
+                                           R"({"login": 7, "senha": "x"})"));    // login não é texto
+
+// ---- Login e logout -----------------------------------------------------------
+
+TEST_F(ApiTest, EntrarComSenhaCorretaRespondeComCookieDeSessao) {
+    api.cadastrar(req("", credenciais("ana", "senha-segura")));
+
+    const auto r = api.entrar(req("", credenciais("ana", "senha-segura")));
+
+    EXPECT_EQ(r.status, 200);
+    EXPECT_EQ(api.usuarioAtual(req(cookieDe(r))).corpo.at("login"), "ana");
+}
+
+TEST_F(ApiTest, EntrarIgnoraMaiusculasEEspacosNoLogin) {
+    api.cadastrar(req("", credenciais("ana", "senha-segura")));
+
+    const auto r = api.entrar(req("", credenciais(" ANA ", "senha-segura")));
+
+    EXPECT_EQ(r.status, 200);
+}
+
+TEST_F(ApiTest, EntrarComSenhaErradaResponde401SemCookie) {
+    api.cadastrar(req("", credenciais("ana", "senha-segura")));
+
+    const auto r = api.entrar(req("", credenciais("ana", "senha-errada")));
+
+    EXPECT_EQ(r.status, 401);
+    EXPECT_TRUE(r.cookies.empty());
+}
+
+TEST_F(ApiTest, LoginInexistenteESenhaErradaRecebemAMesmaMensagem) {
+    // Mensagens diferentes revelariam quais logins existem.
+    api.cadastrar(req("", credenciais("ana", "senha-segura")));
+
+    const auto senhaErrada = api.entrar(req("", credenciais("ana", "senha-errada")));
+    const auto loginInexistente = api.entrar(req("", credenciais("bia", "senha-segura")));
+
+    EXPECT_EQ(senhaErrada.corpo, loginInexistente.corpo);
+}
+
+TEST_F(ApiTest, EntrarComArmazenamentoIndisponivelResponde503) {
+    repo.indisponivel = true;
+
+    const auto r = api.entrar(req("", credenciais("ana", "senha-segura")));
+
+    EXPECT_EQ(r.status, 503);
+}
+
+TEST_F(ApiTest, SairApagaOCookieNoNavegador) {
+    const auto r = api.sair(req(entrarComo("ana")));
+
+    EXPECT_EQ(r.status, 204);
+    EXPECT_NE(r.cookies.at(0).find("Max-Age=0"), std::string::npos);
+}
+
+// ---- Cookie e sessão ----------------------------------------------------------
+
+TEST_F(ApiTest, CookieDeSessaoEhHttpOnlyESameSiteLax) {
+    const auto r = api.cadastrar(req("", credenciais("ana", "senha-segura")));
+
+    EXPECT_NE(r.cookies.at(0).find("HttpOnly"), std::string::npos);
+    EXPECT_NE(r.cookies.at(0).find("SameSite=Lax"), std::string::npos);
+}
+
+TEST_F(ApiTest, CookieNaoEhSecureQuandoNaoConfigurado) {
+    const auto r = api.cadastrar(req("", credenciais("ana", "senha-segura")));
+
+    EXPECT_EQ(r.cookies.at(0).find("Secure"), std::string::npos);
+}
+
+TEST(ApiCookieSeguro, CookieEhSecureQuandoConfigurado) {
+    RepositorioMemoria repo;
+    Api api(repo, OpcoesApi{kSegredo, true});
+
+    const auto r = api.cadastrar({{}, credenciais("ana", "senha-segura").dump(), ""});
+
+    EXPECT_NE(r.cookies.at(0).find("; Secure"), std::string::npos);
+}
+
+TEST_F(ApiTest, SemCookieOUsuarioAtualResponde401) {
+    EXPECT_EQ(api.usuarioAtual(req("")).status, 401);
+}
+
+TEST_F(ApiTest, SessaoExpiradaResponde401) {
+    const auto cookie = entrarComo("ana");
+    agora += diario::AssinadorSessao::kValidade;
+
+    EXPECT_EQ(api.usuarioAtual(req(cookie)).status, 401);
+}
+
+TEST_F(ApiTest, CookieAdulteradoResponde401) {
+    auto cookie = entrarComo("ana");
+    cookie.back() = cookie.back() == '0' ? '1' : '0';  // altera um caractere da assinatura
+
+    EXPECT_EQ(api.usuarioAtual(req(cookie)).status, 401);
+}
+
+TEST_F(ApiTest, CookieDeSessaoEhEncontradoEntreOutrosCookies) {
+    const auto sessao = entrarComo("ana");
+
+    const auto r = api.usuarioAtual(req("tema=escuro; " + sessao + "; idioma=pt"));
+
+    EXPECT_EQ(r.status, 200);
+}
+
+TEST_F(ApiTest, SessaoDeUsuarioQueNaoExisteMaisResponde401) {
+    const auto cookie = entrarComo("ana");
+    repo.usuarios.clear();
+
+    EXPECT_EQ(api.usuarioAtual(req(cookie)).status, 401);
+}
+
+enum class Rota { Listar, Estatisticas, Criar, Atualizar, Remover };
+
+class RotaDeLivrosSemSessao : public ApiTest, public ::testing::WithParamInterface<Rota> {
+protected:
+    Resposta chamar(Rota rota, const Requisicao& r) {
+        switch (rota) {
+            case Rota::Listar: return api.listarLivros(r);
+            case Rota::Estatisticas: return api.estatisticas(r);
+            case Rota::Criar: return api.criarLivro(r);
+            case Rota::Atualizar: return api.atualizarLivro(r, 1);
+            case Rota::Remover: return api.removerLivro(r, 1);
+        }
+        return {};
+    }
+};
+
+TEST_P(RotaDeLivrosSemSessao, Responde401) {
+    const auto r = chamar(GetParam(), req("", livro("A", "B", 3)));
+
+    EXPECT_EQ(r.status, 401);
+}
+
+INSTANTIATE_TEST_SUITE_P(Rotas, RotaDeLivrosSemSessao,
+                         ::testing::Values(Rota::Listar, Rota::Estatisticas, Rota::Criar, Rota::Atualizar,
+                                           Rota::Remover));
+
+// ---- Isolamento entre usuários ------------------------------------------------
+
+TEST_F(ApiComLivros, OutroUsuarioNaoVeOsLivrosDaAna) {
+    const auto bia = entrarComo("bia");
+
+    EXPECT_TRUE(api.listarLivros(req(bia)).corpo.empty());
+}
+
+TEST_F(ApiComLivros, IdsDeLivrosComecamEmUmParaCadaUsuario) {
+    const auto bia = entrarComo("bia");
+
+    const auto r = api.criarLivro(req(bia, livro("Vidas Secas", "Graciliano Ramos", 4)));
+
+    EXPECT_EQ(r.corpo.at("id"), 1);
+}
+
+TEST_F(ApiComLivros, OutroUsuarioNaoConsegueRemoverLivroDaAna) {
+    const auto bia = entrarComo("bia");
+    api.criarLivro(req(bia, livro("Vidas Secas", "Graciliano Ramos", 4)));
+
+    api.removerLivro(req(bia), 1);  // id 1 da Bia, não o da Ana
+
+    EXPECT_EQ(api.listarLivros(req(ana)).corpo.size(), 3u);
+}
+
+TEST_F(ApiComLivros, EstatisticasSaoDoUsuarioDaSessao) {
+    const auto bia = entrarComo("bia");
+
+    EXPECT_EQ(api.estatisticas(req(bia)).corpo.at("total"), 0);
+}
+
 // ---- Listagem -----------------------------------------------------------------
 
 TEST_F(ApiComLivros, ListarSemParametrosDevolveTodosNaOrdemDeInsercao) {
-    const auto r = api.listarLivros({});
+    const auto r = api.listarLivros(req(ana));
 
     EXPECT_EQ(r.status, 200);
     EXPECT_EQ(titulos(r.corpo), (std::vector<std::string>{"Dom Casmurro", "Iracema", "Memórias Póstumas"}));
 }
 
 TEST_F(ApiComLivros, ListarComOrdemNotaDevolveMaiorNotaPrimeiro) {
-    const auto r = api.listarLivros(comParametros({{"ordem", "nota"}}));
+    const auto r = api.listarLivros(req(ana, nullptr, {{"ordem", "nota"}}));
 
     EXPECT_EQ(titulos(r.corpo), (std::vector<std::string>{"Dom Casmurro", "Memórias Póstumas", "Iracema"}));
 }
 
 TEST_F(ApiComLivros, ListarComBuscaDevolveSoOsLivrosQueCombinam) {
-    const auto r = api.listarLivros(comParametros({{"q", "machado"}}));
-
-    EXPECT_EQ(titulos(r.corpo), (std::vector<std::string>{"Dom Casmurro", "Memórias Póstumas"}));
-}
-
-TEST_F(ApiComLivros, ListarCombinaBuscaNotaMinimaEOrdenacao) {
-    const auto r = api.listarLivros(comParametros({{"q", "machado"}, {"notaMin", "4"}, {"ordem", "nota"}}));
+    const auto r = api.listarLivros(req(ana, nullptr, {{"q", "machado"}}));
 
     EXPECT_EQ(titulos(r.corpo), (std::vector<std::string>{"Dom Casmurro", "Memórias Póstumas"}));
 }
 
 TEST_F(ApiComLivros, ListarComNotaMinimaExcluiNotasMenores) {
-    const auto r = api.listarLivros(comParametros({{"notaMin", "3"}}));
+    const auto r = api.listarLivros(req(ana, nullptr, {{"notaMin", "3"}}));
 
     EXPECT_EQ(titulos(r.corpo), (std::vector<std::string>{"Dom Casmurro", "Memórias Póstumas"}));
 }
 
-class NotaMinimaInvalida : public ::testing::TestWithParam<std::string> {};
+TEST_F(ApiComLivros, ListarCombinaBuscaNotaMinimaEOrdenacao) {
+    const auto r = api.listarLivros(req(ana, nullptr, {{"q", "a"}, {"notaMin", "4"}, {"ordem", "nota"}}));
+
+    EXPECT_EQ(titulos(r.corpo), (std::vector<std::string>{"Dom Casmurro", "Memórias Póstumas"}));
+}
+
+class NotaMinimaInvalida : public ApiTest, public ::testing::WithParamInterface<std::string> {};
 
 TEST_P(NotaMinimaInvalida, Responde400) {
-    RepositorioMemoria repo;
-    Api api(repo);
-
-    const auto r = api.listarLivros(comParametros({{"notaMin", GetParam()}}));
+    const auto r = api.listarLivros(req(entrarComo("ana"), nullptr, {{"notaMin", GetParam()}}));
 
     EXPECT_EQ(r.status, 400);
 }
 
 INSTANTIATE_TEST_SUITE_P(Casos, NotaMinimaInvalida, ::testing::Values("x", "12", "-1", "6", "9"));
 
+TEST_F(ApiTest, ListarComArmazenamentoIndisponivelResponde503) {
+    const auto cookie = entrarComo("ana");
+    repo.indisponivel = true;
+
+    EXPECT_EQ(api.listarLivros(req(cookie)).status, 503);
+}
+
 // ---- Estatísticas -------------------------------------------------------------
 
 TEST_F(ApiComLivros, EstatisticasDevolvemTotalMediaEAutoresMaisLidos) {
-    const auto r = api.estatisticas({});
+    const auto r = api.estatisticas(req(ana));
 
     EXPECT_EQ(r.status, 200);
     EXPECT_EQ(r.corpo.at("total"), 3);
@@ -101,73 +371,62 @@ TEST_F(ApiComLivros, EstatisticasDevolvemTotalMediaEAutoresMaisLidos) {
 
 // ---- Criação ------------------------------------------------------------------
 
-TEST(ApiCriar, LivroValidoResponde201ComOIdAtribuido) {
-    RepositorioMemoria repo;
-    Api api(repo);
-
-    const auto r = api.criarLivro(comCorpo(livro("Vidas Secas", "Graciliano Ramos", 4)));
+TEST_F(ApiTest, LivroValidoResponde201ComOIdAtribuido) {
+    const auto r = api.criarLivro(req(entrarComo("ana"), livro("Vidas Secas", "Graciliano Ramos", 4)));
 
     EXPECT_EQ(r.status, 201);
     EXPECT_EQ(r.corpo.at("id"), 1);
     EXPECT_EQ(r.corpo.at("titulo"), "Vidas Secas");
 }
 
-TEST(ApiCriar, LivroCriadoEhGravadoNoRepositorio) {
-    RepositorioMemoria repo;
-    Api api(repo);
+TEST_F(ApiTest, LivroCriadoEhGravadoNoDiarioDoUsuario) {
+    api.criarLivro(req(entrarComo("ana"), livro("Vidas Secas", "Graciliano Ramos", 4)));
 
-    api.criarLivro(comCorpo(livro("Vidas Secas", "Graciliano Ramos", 4)));
-
-    EXPECT_EQ(repo.salvo.tamanho(), 1u);
+    EXPECT_EQ(repo.diarios.at(1).tamanho(), 1u);
 }
 
-TEST(ApiCriar, LivroInvalidoResponde400ComAMensagemDoNucleo) {
-    RepositorioMemoria repo;
-    Api api(repo);
-
-    const auto r = api.criarLivro(comCorpo(livro("", "Autor", 3)));
+TEST_F(ApiTest, LivroInvalidoResponde400ComAMensagemDoNucleo) {
+    const auto r = api.criarLivro(req(entrarComo("ana"), livro("", "Autor", 3)));
 
     EXPECT_EQ(r.status, 400);
     EXPECT_EQ(r.corpo.at("erro"), "título é obrigatório");
 }
 
-class CorpoInvalido : public ::testing::TestWithParam<std::string> {};
+class CorpoDeLivroInvalido : public ApiTest, public ::testing::WithParamInterface<std::string> {};
 
-TEST_P(CorpoInvalido, Responde400JsonInvalido) {
-    RepositorioMemoria repo;
-    Api api(repo);
-
-    const auto r = api.criarLivro({{}, GetParam()});
+TEST_P(CorpoDeLivroInvalido, Responde400JsonInvalido) {
+    const auto r = api.criarLivro({{}, GetParam(), entrarComo("ana")});
 
     EXPECT_EQ(r.status, 400);
     EXPECT_EQ(r.corpo.at("erro"), "JSON inválido");
 }
 
-INSTANTIATE_TEST_SUITE_P(Casos, CorpoInvalido,
+INSTANTIATE_TEST_SUITE_P(Casos, CorpoDeLivroInvalido,
                          ::testing::Values("",                                              // vazio
                                            "{",                                             // incompleto
                                            "[1, 2]",                                        // não é objeto
                                            R"({"titulo":"A","autor":"B","nota":"5"})"));  // nota como texto
 
-TEST(ApiCriar, FalhaAoGravarResponde503ENaoMostraOLivro) {
-    RepositorioMemoria repo;
-    Api api(repo);
-    repo.falharAoSalvar = true;
+TEST_F(ApiTest, FalhaAoGravarResponde503ENaoMostraOLivro) {
+    const auto ana = entrarComo("ana");
+    api.listarLivros(req(ana));  // carrega o diário antes da falha
+    repo.indisponivel = true;
 
-    const auto r = api.criarLivro(comCorpo(livro("Vidas Secas", "Graciliano Ramos", 4)));
+    const auto r = api.criarLivro(req(ana, livro("Vidas Secas", "Graciliano Ramos", 4)));
+    repo.indisponivel = false;
 
     EXPECT_EQ(r.status, 503);
-    EXPECT_TRUE(api.listarLivros({}).corpo.empty());
+    EXPECT_TRUE(api.listarLivros(req(ana)).corpo.empty());
 }
 
-TEST(ApiCriar, IdNaoEhConsumidoQuandoAGravacaoFalha) {
-    RepositorioMemoria repo;
-    Api api(repo);
-    repo.falharAoSalvar = true;
-    api.criarLivro(comCorpo(livro("A", "X", 1)));
-    repo.falharAoSalvar = false;
+TEST_F(ApiTest, IdNaoEhConsumidoQuandoAGravacaoFalha) {
+    const auto ana = entrarComo("ana");
+    api.listarLivros(req(ana));
+    repo.indisponivel = true;
+    api.criarLivro(req(ana, livro("A", "X", 1)));
+    repo.indisponivel = false;
 
-    const auto r = api.criarLivro(comCorpo(livro("B", "X", 1)));
+    const auto r = api.criarLivro(req(ana, livro("B", "X", 1)));
 
     EXPECT_EQ(r.corpo.at("id"), 1);
 }
@@ -175,7 +434,7 @@ TEST(ApiCriar, IdNaoEhConsumidoQuandoAGravacaoFalha) {
 // ---- Atualização --------------------------------------------------------------
 
 TEST_F(ApiComLivros, AtualizarLivroExistenteDevolveOsNovosDados) {
-    const auto r = api.atualizarLivro(comCorpo(livro("Dom Casmurro (2a ed.)", "Machado de Assis", 4)), 1);
+    const auto r = api.atualizarLivro(req(ana, livro("Dom Casmurro (2a ed.)", "Machado de Assis", 4)), 1);
 
     EXPECT_EQ(r.status, 200);
     EXPECT_EQ(r.corpo.at("titulo"), "Dom Casmurro (2a ed.)");
@@ -183,65 +442,67 @@ TEST_F(ApiComLivros, AtualizarLivroExistenteDevolveOsNovosDados) {
 }
 
 TEST_F(ApiComLivros, AtualizarLivroInexistenteResponde404) {
-    const auto r = api.atualizarLivro(comCorpo(livro("Z", "Z", 1)), 999);
-
-    EXPECT_EQ(r.status, 404);
+    EXPECT_EQ(api.atualizarLivro(req(ana, livro("Z", "Z", 1)), 999).status, 404);
 }
 
 TEST_F(ApiComLivros, AtualizarComDadosInvalidosResponde400EMantemOOriginal) {
-    const auto r = api.atualizarLivro(comCorpo(livro("Dom Casmurro", "Machado de Assis", 9)), 1);
+    const auto r = api.atualizarLivro(req(ana, livro("Dom Casmurro", "Machado de Assis", 9)), 1);
 
     EXPECT_EQ(r.status, 400);
-    EXPECT_EQ(api.listarLivros({}).corpo.at(0).at("nota"), 5);
+    EXPECT_EQ(api.listarLivros(req(ana)).corpo.at(0).at("nota"), 5);
 }
 
 TEST_F(ApiComLivros, AtualizarComFalhaAoGravarResponde503EMantemOOriginal) {
-    repo.falharAoSalvar = true;
+    repo.indisponivel = true;
 
-    const auto r = api.atualizarLivro(comCorpo(livro("Outro título", "Machado de Assis", 5)), 1);
+    const auto r = api.atualizarLivro(req(ana, livro("Outro título", "Machado de Assis", 5)), 1);
+    repo.indisponivel = false;
 
     EXPECT_EQ(r.status, 503);
-    EXPECT_EQ(api.listarLivros({}).corpo.at(0).at("titulo"), "Dom Casmurro");
+    EXPECT_EQ(api.listarLivros(req(ana)).corpo.at(0).at("titulo"), "Dom Casmurro");
 }
 
 // ---- Remoção ------------------------------------------------------------------
 
 TEST_F(ApiComLivros, RemoverLivroExistenteResponde204SemCorpo) {
-    const auto r = api.removerLivro({}, 2);
+    const auto r = api.removerLivro(req(ana), 2);
 
     EXPECT_EQ(r.status, 204);
     EXPECT_TRUE(r.corpo.is_null());
 }
 
 TEST_F(ApiComLivros, LivroRemovidoSaiDaListagem) {
-    api.removerLivro({}, 2);
+    api.removerLivro(req(ana), 2);
 
-    EXPECT_EQ(titulos(api.listarLivros({}).corpo), (std::vector<std::string>{"Dom Casmurro", "Memórias Póstumas"}));
+    EXPECT_EQ(titulos(api.listarLivros(req(ana)).corpo),
+              (std::vector<std::string>{"Dom Casmurro", "Memórias Póstumas"}));
 }
 
 TEST_F(ApiComLivros, RemoverLivroInexistenteResponde404) {
-    EXPECT_EQ(api.removerLivro({}, 999).status, 404);
+    EXPECT_EQ(api.removerLivro(req(ana), 999).status, 404);
 }
 
 TEST_F(ApiComLivros, RemoverComFalhaAoGravarResponde503EMantemOLivro) {
-    repo.falharAoSalvar = true;
+    repo.indisponivel = true;
 
-    const auto r = api.removerLivro({}, 2);
+    const auto r = api.removerLivro(req(ana), 2);
+    repo.indisponivel = false;
 
     EXPECT_EQ(r.status, 503);
-    EXPECT_EQ(api.listarLivros({}).corpo.size(), 3u);
+    EXPECT_EQ(api.listarLivros(req(ana)).corpo.size(), 3u);
 }
 
-// ---- Carga inicial ------------------------------------------------------------
+// ---- Carga do repositório -----------------------------------------------------
 
-TEST(ApiCarga, ComecaComOsLivrosJaSalvosNoRepositorio) {
-    RepositorioMemoria repo;
+TEST_F(ApiTest, LivrosJaSalvosNoRepositorioAparecemNaListagem) {
+    // Simula o servidor reiniciando: o diário vem do repositório, não da memória da Api.
+    const auto ana = entrarComo("ana");
     diario::Livro l;
     l.titulo = "Capitães da Areia";
     l.autor = "Jorge Amado";
-    repo.salvo.adicionar(l);
+    repo.diarios[1].adicionar(l);
 
-    Api api(repo);
+    const auto r = api.listarLivros(req(ana));
 
-    EXPECT_EQ(titulos(api.listarLivros({}).corpo), (std::vector<std::string>{"Capitães da Areia"}));
+    EXPECT_EQ(titulos(r.corpo), (std::vector<std::string>{"Capitães da Areia"}));
 }

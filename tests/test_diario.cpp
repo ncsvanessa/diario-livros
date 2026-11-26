@@ -1,4 +1,3 @@
-#include <cstdio>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
@@ -343,13 +342,37 @@ TEST(FiltroNota, SemLivrosNaFaixaRetornaListaVazia) {
     EXPECT_TRUE(d.comNotaMinima(3).empty());
 }
 
-TEST(FiltroNota, NotaMinimaForaDoIntervaloLancaExcecao) {
+class NotaMinimaForaDoIntervalo : public ::testing::TestWithParam<int> {};
+
+TEST_P(NotaMinimaForaDoIntervalo, LancaExcecao) {
     const auto d = diarioComNotas();
-    EXPECT_THROW(d.comNotaMinima(-1), std::invalid_argument);
-    EXPECT_THROW(d.comNotaMinima(6), std::invalid_argument);
+
+    EXPECT_THROW(d.comNotaMinima(GetParam()), std::invalid_argument);
 }
 
+INSTANTIATE_TEST_SUITE_P(FiltroNota, NotaMinimaForaDoIntervalo, ::testing::Values(-1, 6));
+
 // ---- Autores mais lidos -----------------------------------------------------
+
+namespace {
+
+// Resultado de autoresMaisLidos como pares (autor, livros), para comparar de uma vez.
+std::vector<std::pair<std::string, int>> resumo(const std::vector<diario::AutorLido>& autores) {
+    std::vector<std::pair<std::string, int>> out;
+    for (const auto& a : autores) out.emplace_back(a.autor, a.livros);
+    return out;
+}
+
+Diario diarioComQuatroAutores() {
+    Diario d;
+    d.adicionar(livro("Livro 1", "Autora A", 3));
+    d.adicionar(livro("Livro 2", "Autora B", 3));
+    d.adicionar(livro("Livro 3", "Autora C", 3));
+    d.adicionar(livro("Livro 4", "Autora D", 3));
+    return d;
+}
+
+}  // namespace
 
 TEST(AutoresMaisLidos, DiarioVazioRetornaListaVazia) {
     EXPECT_TRUE(Diario{}.autoresMaisLidos().empty());
@@ -362,18 +385,17 @@ TEST(AutoresMaisLidos, OrdenaPelaQuantidadeDeLivros) {
     d.adicionar(livro("C", "Machado de Assis", 3));
 
     const auto autores = d.autoresMaisLidos();
-    ASSERT_EQ(autores.size(), 2u);
-    EXPECT_EQ(autores[0].autor, "Machado de Assis");
-    EXPECT_EQ(autores[0].livros, 2);
-    EXPECT_EQ(autores[1].autor, "Jorge Amado");
-    EXPECT_EQ(autores[1].livros, 1);
+
+    EXPECT_EQ(resumo(autores),
+              (std::vector<std::pair<std::string, int>>{{"Machado de Assis", 2}, {"Jorge Amado", 1}}));
 }
 
-TEST(AutoresMaisLidos, LimitaAQuantidadePedida) {
-    Diario d;
-    for (const auto* autor : {"A", "B", "C", "D"}) d.adicionar(livro("Livro", autor, 3));
-    EXPECT_EQ(d.autoresMaisLidos().size(), 3u);  // padrão: top 3
-    EXPECT_EQ(d.autoresMaisLidos(1).size(), 1u);
+TEST(AutoresMaisLidos, SemLimiteDevolveNoMaximoTres) {
+    EXPECT_EQ(diarioComQuatroAutores().autoresMaisLidos().size(), 3u);
+}
+
+TEST(AutoresMaisLidos, RespeitaOLimitePedido) {
+    EXPECT_EQ(diarioComQuatroAutores().autoresMaisLidos(1).size(), 1u);
 }
 
 TEST(AutoresMaisLidos, EmpateDesempataPeloNome) {
@@ -383,11 +405,10 @@ TEST(AutoresMaisLidos, EmpateDesempataPeloNome) {
     d.adicionar(livro("C", "Graciliano Ramos", 3));
 
     const auto autores = d.autoresMaisLidos();
-    ASSERT_EQ(autores.size(), 3u);
+
     // Ordem alfabética sem diferenciar maiúsculas: "clarice" vem antes de "Graciliano".
-    EXPECT_EQ(autores[0].autor, "clarice Lispector");
-    EXPECT_EQ(autores[1].autor, "Graciliano Ramos");
-    EXPECT_EQ(autores[2].autor, "Rachel de Queiroz");
+    EXPECT_EQ(resumo(autores), (std::vector<std::pair<std::string, int>>{
+                                   {"clarice Lispector", 1}, {"Graciliano Ramos", 1}, {"Rachel de Queiroz", 1}}));
 }
 
 TEST(AutoresMaisLidos, AgrupaMesmoAutorComMaiusculasEEspacosDiferentes) {
@@ -397,35 +418,51 @@ TEST(AutoresMaisLidos, AgrupaMesmoAutorComMaiusculasEEspacosDiferentes) {
     d.adicionar(livro("C", "  machado de assis ", 3));
 
     const auto autores = d.autoresMaisLidos();
-    ASSERT_EQ(autores.size(), 1u);
-    EXPECT_EQ(autores[0].autor, "Machado de Assis");  // nome do primeiro registro
-    EXPECT_EQ(autores[0].livros, 3);
+
+    // Um só autor, exibido como no primeiro registro.
+    EXPECT_EQ(resumo(autores), (std::vector<std::pair<std::string, int>>{{"Machado de Assis", 3}}));
 }
 
 // ---- Persistência -----------------------------------------------------------
 
-TEST(Persistencia, SalvarECarregarPreservaDadosEContadorDeId) {
-    const auto caminho =
-        (std::filesystem::temp_directory_path() / "diario_teste_persistencia.json").string();
+// Arquivo temporário exclusivo de cada teste, removido ao final.
+class PersistenciaEmArquivo : public ::testing::Test {
+protected:
+    void SetUp() override {
+        const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
+        caminho = (std::filesystem::temp_directory_path() / (std::string("diario_") + info->name() + ".json"))
+                      .string();
+        std::filesystem::remove(caminho);
+    }
+    void TearDown() override { std::filesystem::remove(caminho); }
 
+    std::string caminho;
+};
+
+TEST_F(PersistenciaEmArquivo, CarregarDevolveOLivroComTodosOsCampos) {
     Diario original;
     Livro l = livro("Vidas Secas", "Graciliano Ramos", 4);
     l.dataLancamento = "1938-01-01";
     l.dataLeitura = "2026-10-20";
     l.capaUrl = "https://exemplo.com/vidas-secas.jpg";
+    l.registradoEm = "2026-11-01T10:00:00Z";
     original.adicionar(l);
-    const int removido = original.adicionar(livro("Temp", "Temp", 1));
-    original.remover(removido);
+    original.salvar(caminho);
+
+    const Diario lido = Diario::carregar(caminho);
+
+    // Compara o livro inteiro (todos os campos) pela forma serializada.
+    EXPECT_EQ(nlohmann::json(lido.listar()), nlohmann::json(original.listar()));
+}
+
+TEST_F(PersistenciaEmArquivo, IdRemovidoNaoEhReaproveitadoDepoisDeCarregar) {
+    Diario original;
+    original.adicionar(livro("A", "X", 4));
+    original.remover(original.adicionar(livro("Removido", "X", 1)));  // id 2 usado e removido
     original.salvar(caminho);
 
     Diario lido = Diario::carregar(caminho);
-    std::remove(caminho.c_str());
 
-    ASSERT_EQ(lido.tamanho(), 1u);
-    EXPECT_EQ(lido.listar()[0].titulo, "Vidas Secas");
-    EXPECT_EQ(lido.listar()[0].dataLeitura, "2026-10-20");
-    EXPECT_EQ(lido.listar()[0].capaUrl, "https://exemplo.com/vidas-secas.jpg");
-    // O id 2 já foi usado (e removido); não pode ser reaproveitado.
     EXPECT_EQ(lido.adicionar(livro("Novo", "N", 3)), 3);
 }
 

@@ -132,6 +132,23 @@ std::optional<Usuario> RepositorioPostgres::buscarUsuarioPorId(int id) {
     return primeiroUsuario(r.get());
 }
 
+std::vector<Usuario> RepositorioPostgres::buscarUsuarios(const std::string& trecho, std::size_t limite) {
+    std::vector<Usuario> encontrados;
+    if (trecho.empty()) return encontrados;
+    auto c = conectar(url_);
+    // strpos em vez de LIKE: '_' é válido em logins e seria curinga no LIKE.
+    // COLLATE "C": ordem byte a byte, igual à do repositório em arquivo.
+    auto r = executar(c.get(),
+                      "SELECT id, login, senha_hash FROM usuarios WHERE strpos(login, $1) > 0 "
+                      "ORDER BY login COLLATE \"C\" LIMIT $2",
+                      {trecho, std::to_string(limite)});
+    for (int i = 0; i < PQntuples(r.get()); ++i) {
+        encontrados.push_back(
+            Usuario{std::stoi(PQgetvalue(r.get(), i, 0)), PQgetvalue(r.get(), i, 1), PQgetvalue(r.get(), i, 2)});
+    }
+    return encontrados;
+}
+
 Diario RepositorioPostgres::carregarDiario(int usuarioId) {
     auto c = conectar(url_);
     const auto usuario = std::to_string(usuarioId);

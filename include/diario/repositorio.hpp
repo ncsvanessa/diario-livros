@@ -1,8 +1,10 @@
 #pragma once
 
+#include <cstddef>
 #include <exception>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "diario/conta.hpp"
 #include "diario/diario.hpp"
@@ -28,6 +30,10 @@ public:
     virtual std::optional<Usuario> buscarUsuarioPorLogin(const std::string& login) = 0;
     virtual std::optional<Usuario> buscarUsuarioPorId(int id) = 0;
 
+    // Usuários cujo login contém `trecho` (já normalizado), em ordem alfabética de login,
+    // no máximo `limite`. Trecho vazio devolve lista vazia.
+    virtual std::vector<Usuario> buscarUsuarios(const std::string& trecho, std::size_t limite) = 0;
+
     // Diário vazio se o usuário ainda não salvou nada.
     virtual Diario carregarDiario(int usuarioId) = 0;
 
@@ -44,6 +50,7 @@ public:
     int criarUsuario(const std::string& login, const std::string& senhaHash) override;
     std::optional<Usuario> buscarUsuarioPorLogin(const std::string& login) override;
     std::optional<Usuario> buscarUsuarioPorId(int id) override;
+    std::vector<Usuario> buscarUsuarios(const std::string& trecho, std::size_t limite) override;
     Diario carregarDiario(int usuarioId) override;
     void salvarDiario(int usuarioId, const Diario& diario) override;
 

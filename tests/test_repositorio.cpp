@@ -89,6 +89,46 @@ TEST_F(RepositorioArquivoTest, UsuariosRecebemIdsDiferentes) {
     EXPECT_NE(ana, bia);
 }
 
+TEST_F(RepositorioArquivoTest, BuscarUsuariosDevolveLoginsQueContemOTrechoEmOrdemAlfabetica) {
+    RepositorioArquivo repo(caminho_.string());
+    repo.criarUsuario("mariana", "h");
+    repo.criarUsuario("ana", "h");
+    repo.criarUsuario("bruno", "h");
+
+    const auto encontrados = repo.buscarUsuarios("ana", 10);
+
+    ASSERT_EQ(encontrados.size(), 2u);
+    EXPECT_EQ(encontrados[0].login, "ana");
+    EXPECT_EQ(encontrados[1].login, "mariana");
+}
+
+TEST_F(RepositorioArquivoTest, BuscarUsuariosRespeitaOLimite) {
+    RepositorioArquivo repo(caminho_.string());
+    repo.criarUsuario("ana1", "h");
+    repo.criarUsuario("ana2", "h");
+    repo.criarUsuario("ana3", "h");
+
+    EXPECT_EQ(repo.buscarUsuarios("ana", 2).size(), 2u);
+}
+
+TEST_F(RepositorioArquivoTest, BuscarUsuariosComTrechoVazioNaoDevolveNinguem) {
+    RepositorioArquivo repo(caminho_.string());
+    repo.criarUsuario("ana", "h");
+
+    EXPECT_TRUE(repo.buscarUsuarios("", 10).empty());
+}
+
+TEST_F(RepositorioArquivoTest, BuscarUsuariosTrataSublinhadoComoCaractereComum) {
+    RepositorioArquivo repo(caminho_.string());
+    repo.criarUsuario("ana_maria", "h");
+    repo.criarUsuario("anaxmaria", "h");
+
+    const auto encontrados = repo.buscarUsuarios("a_m", 10);
+
+    ASSERT_EQ(encontrados.size(), 1u);
+    EXPECT_EQ(encontrados[0].login, "ana_maria");
+}
+
 // ---- Diários ------------------------------------------------------------------
 
 TEST_F(RepositorioArquivoTest, DiarioDeUsuarioSemLivrosEhVazio) {

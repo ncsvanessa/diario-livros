@@ -3,6 +3,7 @@
 // Dublê do Repositorio para os testes da Api: o armazenamento é a dependência externa
 // (arquivo/banco), então é o único ponto substituído. O núcleo (Diario) é o real.
 
+#include <algorithm>
 #include <map>
 #include <stdexcept>
 
@@ -35,6 +36,20 @@ public:
         const auto it = usuarios.find(id);
         if (it == usuarios.end()) return std::nullopt;
         return it->second;
+    }
+
+    std::vector<Usuario> buscarUsuarios(const std::string& trecho, std::size_t limite) override {
+        falharSeIndisponivel();
+        std::vector<Usuario> encontrados;
+        if (trecho.empty()) return encontrados;
+        // std::map já percorre por id; ordena por login como os repositórios reais.
+        for (const auto& [id, u] : usuarios) {
+            if (u.login.find(trecho) != std::string::npos) encontrados.push_back(u);
+        }
+        std::sort(encontrados.begin(), encontrados.end(),
+                  [](const Usuario& a, const Usuario& b) { return a.login < b.login; });
+        if (encontrados.size() > limite) encontrados.resize(limite);
+        return encontrados;
     }
 
     Diario carregarDiario(int usuarioId) override {

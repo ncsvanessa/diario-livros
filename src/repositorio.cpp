@@ -1,5 +1,6 @@
 #include "diario/repositorio.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <stdexcept>
 #include <utility>
@@ -85,6 +86,19 @@ std::optional<Usuario> RepositorioArquivo::buscarUsuarioPorId(int id) {
         if (u.at("id") == id) return usuarioDe(u);
     }
     return std::nullopt;
+}
+
+std::vector<Usuario> RepositorioArquivo::buscarUsuarios(const std::string& trecho, std::size_t limite) {
+    std::vector<Usuario> encontrados;
+    if (trecho.empty()) return encontrados;
+    const auto dados = ler();
+    for (const auto& u : dados.at("usuarios")) {
+        if (u.at("login").get<std::string>().find(trecho) != std::string::npos) encontrados.push_back(*usuarioDe(u));
+    }
+    std::sort(encontrados.begin(), encontrados.end(),
+              [](const Usuario& a, const Usuario& b) { return a.login < b.login; });
+    if (encontrados.size() > limite) encontrados.resize(limite);
+    return encontrados;
 }
 
 Diario RepositorioArquivo::carregarDiario(int usuarioId) {

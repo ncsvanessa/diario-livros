@@ -87,6 +87,41 @@ TEST_F(RepositorioPostgresTest, CriarLoginRepetidoLancaLoginEmUso) {
     EXPECT_THROW(repo_->criarUsuario(login, "outro-hash"), LoginEmUso);
 }
 
+// O banco é compartilhado entre execuções: cada teste usa um prefixo aleatório próprio,
+// então só os usuários criados por ele contêm o trecho buscado.
+TEST_F(RepositorioPostgresTest, BuscarUsuariosDevolveLoginsQueContemOTrechoEmOrdemAlfabetica) {
+    const auto prefixo = loginAleatorio();
+    repo_->criarUsuario(prefixo + "b", "h");
+    repo_->criarUsuario(prefixo + "a", "h");
+    novoUsuario();
+
+    const auto encontrados = repo_->buscarUsuarios(prefixo, 10);
+
+    ASSERT_EQ(encontrados.size(), 2u);
+    EXPECT_EQ(encontrados[0].login, prefixo + "a");
+    EXPECT_EQ(encontrados[1].login, prefixo + "b");
+}
+
+TEST_F(RepositorioPostgresTest, BuscarUsuariosRespeitaOLimite) {
+    const auto prefixo = loginAleatorio();
+    repo_->criarUsuario(prefixo + "1", "h");
+    repo_->criarUsuario(prefixo + "2", "h");
+    repo_->criarUsuario(prefixo + "3", "h");
+
+    EXPECT_EQ(repo_->buscarUsuarios(prefixo, 2).size(), 2u);
+}
+
+TEST_F(RepositorioPostgresTest, BuscarUsuariosTrataSublinhadoComoCaractereComum) {
+    const auto prefixo = loginAleatorio();
+    repo_->criarUsuario(prefixo + "_x", "h");
+    repo_->criarUsuario(prefixo + "yx", "h");
+
+    const auto encontrados = repo_->buscarUsuarios(prefixo + "_", 10);
+
+    ASSERT_EQ(encontrados.size(), 1u);
+    EXPECT_EQ(encontrados[0].login, prefixo + "_x");
+}
+
 // ---- Diários ------------------------------------------------------------------
 
 TEST_F(RepositorioPostgresTest, DiarioDeUsuarioNovoEhVazio) {

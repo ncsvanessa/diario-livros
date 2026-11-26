@@ -20,6 +20,7 @@ public:
     int criarUsuario(const std::string& login, const std::string& senhaHash) override;
     std::optional<Usuario> buscarUsuarioPorLogin(const std::string& login) override;
     std::optional<Usuario> buscarUsuarioPorId(int id) override;
+    std::vector<Usuario> buscarUsuarios(const std::string& trecho, std::size_t limite) override;
     Diario carregarDiario(int usuarioId) override;
 
     // Regrava os livros do usuário numa única transação: ou tudo é salvo, ou nada muda.

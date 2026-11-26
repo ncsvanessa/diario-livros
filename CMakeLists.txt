@@ -50,13 +50,15 @@ endif()
 add_library(diario_core
   src/diario.cpp
   src/repositorio.cpp
-  src/aleatorio.cpp)
+  src/aleatorio.cpp
+  src/senha.cpp)
 target_include_directories(diario_core PUBLIC include)
 target_link_libraries(diario_core PUBLIC nlohmann_json::nlohmann_json)
 # BCryptGenRandom (gerador aleatório do Windows) fica em bcrypt.lib.
 if(WIN32)
   target_link_libraries(diario_core PRIVATE bcrypt)
 endif()
+target_link_libraries(diario_core PRIVATE monocypher)
 
 # Cobertura (GCC/Clang). Só o código do sistema é instrumentado; dependências e testes não.
 option(DIARIO_COVERAGE "Instrumenta o núcleo para medir cobertura" OFF)
@@ -122,7 +124,8 @@ if(DIARIO_BUILD_TESTS)
   add_executable(diario_tests
     tests/test_diario.cpp
     tests/test_repositorio.cpp
-    tests/test_aleatorio.cpp)
+    tests/test_aleatorio.cpp
+    tests/test_senha.cpp)
   target_link_libraries(diario_tests PRIVATE diario_core GTest::gtest_main)
 
   include(GoogleTest)

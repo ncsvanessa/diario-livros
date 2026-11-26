@@ -2,6 +2,8 @@
 #include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -24,50 +26,113 @@ Livro livro(const std::string& titulo, const std::string& autor, int nota) {
 
 // ---- Validação de dados -----------------------------------------------------
 
-TEST(Validacao, AceitaDatasReais) {
-    EXPECT_TRUE(diario::dataValida("1899-01-01"));
-    EXPECT_TRUE(diario::dataValida("2024-02-29"));  // bissexto
-    EXPECT_TRUE(diario::dataValida("2000-02-29"));  // divisível por 400
+class DataReal : public ::testing::TestWithParam<std::string> {};
+
+TEST_P(DataReal, EhAceita) {
+    EXPECT_TRUE(diario::dataValida(GetParam()));
 }
 
-TEST(Validacao, RejeitaDatasInvalidas) {
-    EXPECT_FALSE(diario::dataValida(""));
-    EXPECT_FALSE(diario::dataValida("2023-02-29"));  // não bissexto
-    EXPECT_FALSE(diario::dataValida("1900-02-29"));  // divisível por 100, não por 400
-    EXPECT_FALSE(diario::dataValida("2024-13-01"));
-    EXPECT_FALSE(diario::dataValida("2024-04-31"));
-    EXPECT_FALSE(diario::dataValida("2024-4-01"));
-    EXPECT_FALSE(diario::dataValida("01/04/2024"));
-    EXPECT_FALSE(diario::dataValida("abcd-ef-gh"));
+INSTANTIATE_TEST_SUITE_P(Validacao, DataReal,
+                         ::testing::Values("1899-01-01",
+                                           "2024-02-29",    // 29/02 em ano bissexto
+                                           "2000-02-29",    // divisível por 400: bissexto
+                                           "2024-12-31"));  // último dia do ano
+
+class DataInvalida : public ::testing::TestWithParam<std::string> {};
+
+TEST_P(DataInvalida, EhRecusada) {
+    EXPECT_FALSE(diario::dataValida(GetParam()));
 }
 
-TEST(Validacao, NotaEntreZeroECinco) {
-    EXPECT_TRUE(diario::notaValida(0));
-    EXPECT_TRUE(diario::notaValida(5));
-    EXPECT_FALSE(diario::notaValida(-1));
-    EXPECT_FALSE(diario::notaValida(6));
+INSTANTIATE_TEST_SUITE_P(Validacao, DataInvalida,
+                         ::testing::Values("",             // vazia
+                                           "2023-02-29",   // 29/02 em ano não bissexto
+                                           "1900-02-29",   // divisível por 100 e não por 400: não bissexto
+                                           "2024-13-01",   // mês 13
+                                           "2024-00-10",   // mês 0
+                                           "2024-04-31",   // abril tem 30 dias
+                                           "2024-01-00",   // dia 0
+                                           "0000-01-01",   // ano 0
+                                           "2024-4-01",    // mês sem zero à esquerda
+                                           "01/04/2024",   // formato DD/MM/AAAA
+                                           "abcd-ef-gh"));  // não numérica
+
+class LimitesDaNota : public ::testing::TestWithParam<std::pair<int, bool>> {};
+
+TEST_P(LimitesDaNota, SoAceitaDeZeroACinco) {
+    const auto [nota, aceita] = GetParam();
+
+    EXPECT_EQ(diario::notaValida(nota), aceita);
 }
 
-TEST(Validacao, CapaPrecisaSerUrlOuImagemEmbutida) {
-    EXPECT_TRUE(diario::capaValida(""));
-    EXPECT_TRUE(diario::capaValida("https://exemplo.com/capa.jpg"));
-    EXPECT_TRUE(diario::capaValida("data:image/png;base64,AAAA"));
-    EXPECT_FALSE(diario::capaValida("javascript:alert(1)"));
-    EXPECT_FALSE(diario::capaValida("capa.jpg"));
+INSTANTIATE_TEST_SUITE_P(Validacao, LimitesDaNota,
+                         ::testing::Values(std::make_pair(-1, false), std::make_pair(0, true),
+                                           std::make_pair(5, true), std::make_pair(6, false)));
+
+const std::vector<std::pair<std::string, bool>> kCapas = {
+    {"", true},                                // sem capa
+    {"https://exemplo.com/capa.jpg", true},    // URL https
+    {"http://exemplo.com/capa.jpg", true},     // URL http
+    {"data:image/png;base64,AAAA", true},      // imagem enviada como arquivo
+    {"javascript:alert(1)", false},            // script
+    {"data:text/html,<b>oi</b>", false},       // data: que não é imagem
+    {"capa.jpg", false},                       // caminho relativo
+};
+
+class CapaDoLivro : public ::testing::TestWithParam<std::pair<std::string, bool>> {};
+
+TEST_P(CapaDoLivro, SoAceitaVaziaUrlHttpOuImagemEmbutida) {
+    const auto& [url, aceita] = GetParam();
+
+    EXPECT_EQ(diario::capaValida(url), aceita);
 }
 
-TEST(Validacao, ExigeTituloEAutorNaoVazios) {
-    EXPECT_EQ(diario::validar(livro("   ", "Autor", 3)).size(), 1u);
-    EXPECT_EQ(diario::validar(livro("Título", "", 3)).size(), 1u);
+INSTANTIATE_TEST_SUITE_P(Validacao, CapaDoLivro, ::testing::ValuesIn(kCapas));
+
+TEST(Validacao, LivroComTituloEAutorNaoTemErros) {
     EXPECT_TRUE(diario::validar(livro("Dom Casmurro", "Machado de Assis", 5)).empty());
 }
 
-TEST(Validacao, LeituraNaoPodeSerAntesDoLancamento) {
+TEST(Validacao, TituloSoComEspacosGeraErroDeTituloObrigatorio) {
+    const auto erros = diario::validar(livro("   ", "Autor", 3));
+
+    EXPECT_EQ(erros, (std::vector<std::string>{"título é obrigatório"}));
+}
+
+TEST(Validacao, AutorVazioGeraErroDeAutorObrigatorio) {
+    const auto erros = diario::validar(livro("Título", "", 3));
+
+    EXPECT_EQ(erros, (std::vector<std::string>{"autor é obrigatório"}));
+}
+
+TEST(Validacao, DataDeLancamentoMalFormadaGeraErro) {
+    Livro l = livro("Torto Arado", "Itamar Vieira Junior", 5);
+    l.dataLancamento = "01/08/2019";
+
+    EXPECT_EQ(diario::validar(l), (std::vector<std::string>{"data de lançamento inválida (use AAAA-MM-DD)"}));
+}
+
+TEST(Validacao, DataDeLeituraMalFormadaGeraErro) {
+    Livro l = livro("Torto Arado", "Itamar Vieira Junior", 5);
+    l.dataLeitura = "2024-02-30";
+
+    EXPECT_EQ(diario::validar(l), (std::vector<std::string>{"data de leitura inválida (use AAAA-MM-DD)"}));
+}
+
+TEST(Validacao, LeituraAntesDoLancamentoGeraErro) {
     Livro l = livro("Torto Arado", "Itamar Vieira Junior", 5);
     l.dataLancamento = "2019-08-01";
     l.dataLeitura = "2018-01-01";
-    EXPECT_EQ(diario::validar(l).size(), 1u);
+
+    EXPECT_EQ(diario::validar(l),
+              (std::vector<std::string>{"data de leitura não pode ser anterior à de lançamento"}));
+}
+
+TEST(Validacao, LeituraNoDiaDoLancamentoEhAceita) {
+    Livro l = livro("Torto Arado", "Itamar Vieira Junior", 5);
+    l.dataLancamento = "2019-08-01";
     l.dataLeitura = "2019-08-01";
+
     EXPECT_TRUE(diario::validar(l).empty());
 }
 

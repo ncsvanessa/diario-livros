@@ -239,8 +239,10 @@ jobs:
       - name: Smoke test
         run: |
           docker run -d --name diario -p 8080:8080 -e SESSION_SECRET=segredo-so-para-o-smoke-test-do-ci diario-livros
-          curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 \
-            http://localhost:8080/api/saude
+          # --retry-all-errors: enquanto o servidor sobe, o proxy do Docker aceita a conexão
+          # e a derruba (erro 56, connection reset), que --retry-connrefused não cobre.
+          curl --fail --silent --show-error --retry 10 --retry-all-errors --retry-delay 1 \
+            http://localhost:8080/api/saude  
           curl --fail --silent --show-error -o /dev/null http://localhost:8080/
           curl --fail --silent --show-error -D cabecalhos.txt -o /dev/null \
             -H "Content-Type: application/json" -d '{"login":"smoke","senha":"senha-do-smoke-test"}' \

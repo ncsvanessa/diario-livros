@@ -979,6 +979,21 @@ let sugestoes = [];
 let destacada = -1;
 let buscaSugestoes;   // timer do debounce
 let requisicaoAtual;  // AbortController da busca em andamento
+// Sugestões já buscadas, por termo: apagar e redigitar responde na hora, sem nova consulta
+// (a Open Library leva cerca de 0,7 s por busca). Guarda só os termos mais recentes.
+const cacheSugestoes = new Map();
+const TAMANHO_CACHE_SUGESTOES = 50;
+
+// Monta a consulta da Open Library. Sem curinga, "dom casmu" não acha nada; com "casmu*" a
+// última palavra vale como começo de palavra, e as sugestões aparecem enquanto se digita.
+// Caracteres especiais da sintaxe de busca (aspas, parênteses, dois-pontos...) viram espaço.
+function consultaOpenLibrary(termo) {
+  const palavras = termo.replace(/[^\p{L}\p{N}'\s]/gu, " ").split(/\s+/).filter(Boolean);
+  if (!palavras.length) return "";
+  const ultima = palavras.length - 1;
+  if (palavras[ultima].length >= 2) palavras[ultima] += "*";
+  return palavras.join(" ");
+}
 
 function fecharSugestoes() {
   clearTimeout(buscaSugestoes);
@@ -1004,9 +1019,23 @@ function livroDaOpenLibrary(doc) {
 
 async function buscarSugestoes(termo) {
   if (requisicaoAtual) requisicaoAtual.abort();
+  const consulta = consultaOpenLibrary(termo);
+  if (!consulta) { fecharSugestoes(); return; }
+  const chave = consulta.toLowerCase();
+  if (cacheSugestoes.has(chave)) {
+    sugestoes = cacheSugestoes.get(chave);
+    desenharSugestoes();
+    return;
+  }
+  // Enquanto a resposta não chega: mantém as sugestões anteriores, se houver; senão avisa.
+  if ($("sugestoes").hidden) {
+    sugestoes = [];
+    desenharSugestoes("Buscando…");
+  }
+
   requisicaoAtual = new AbortController();
   const params = new URLSearchParams({
-    q: termo, limit: "10", fields: "title,author_name,first_publish_year,cover_i",
+    q: consulta, limit: "10", fields: "title,author_name,first_publish_year,cover_i",
   });
   try {
     const r = await fetch(`${OPEN_LIBRARY}?${params}`, { signal: requisicaoAtual.signal });
@@ -1020,6 +1049,10 @@ async function buscarSugestoes(termo) {
       vistos.add(chave);
       return true;
     }).slice(0, 6);
+    cacheSugestoes.set(chave, sugestoes);
+    if (cacheSugestoes.size > TAMANHO_CACHE_SUGESTOES) {
+      cacheSugestoes.delete(cacheSugestoes.keys().next().value);  // o mais antigo
+    }
     desenharSugestoes();
   } catch (err) {
     if (err.name === "AbortError") return;
@@ -1113,7 +1146,7 @@ $("titulo").oninput = () => {
   clearTimeout(buscaSugestoes);
   const termo = $("titulo").value.trim();
   if (termo.length < 3) { fecharSugestoes(); return; }
-  buscaSugestoes = setTimeout(() => buscarSugestoes(termo), 300);
+  buscaSugestoes = setTimeout(() => buscarSugestoes(termo), 200);
 };
 $("titulo").onkeydown = (e) => {
   if ($("sugestoes").hidden) return;

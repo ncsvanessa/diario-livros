@@ -137,6 +137,105 @@ TEST(Diario, PesquisaIgnoraMaiusculasEBuscaEmTituloEAutor) {
     EXPECT_TRUE(d.pesquisar("tolkien").empty());
 }
 
+// ---- Filtro por nota mínima -------------------------------------------------
+
+namespace {
+
+std::vector<std::string> titulos(const std::vector<Livro>& livros) {
+    std::vector<std::string> out;
+    for (const auto& l : livros) out.push_back(l.titulo);
+    return out;
+}
+
+Diario diarioComNotas() {
+    Diario d;
+    d.adicionar(livro("Nota 3", "X", 3));
+    d.adicionar(livro("Nota 5", "X", 5));
+    d.adicionar(livro("Nota 0", "X", 0));
+    d.adicionar(livro("Nota 4", "X", 4));
+    return d;
+}
+
+}  // namespace
+
+TEST(FiltroNota, MantemLivrosComNotaIgualOuMaiorNaOrdemDeInsercao) {
+    const auto d = diarioComNotas();
+    EXPECT_EQ(titulos(d.comNotaMinima(4)), (std::vector<std::string>{"Nota 5", "Nota 4"}));
+}
+
+TEST(FiltroNota, NotaMinimaZeroRetornaTodos) {
+    EXPECT_EQ(diarioComNotas().comNotaMinima(0).size(), 4u);
+}
+
+TEST(FiltroNota, NotaMinimaCincoRetornaSoNotaMaxima) {
+    EXPECT_EQ(titulos(diarioComNotas().comNotaMinima(5)), (std::vector<std::string>{"Nota 5"}));
+}
+
+TEST(FiltroNota, SemLivrosNaFaixaRetornaListaVazia) {
+    Diario d;
+    d.adicionar(livro("A", "X", 2));
+    EXPECT_TRUE(d.comNotaMinima(3).empty());
+}
+
+TEST(FiltroNota, NotaMinimaForaDoIntervaloLancaExcecao) {
+    const auto d = diarioComNotas();
+    EXPECT_THROW(d.comNotaMinima(-1), std::invalid_argument);
+    EXPECT_THROW(d.comNotaMinima(6), std::invalid_argument);
+}
+
+// ---- Autores mais lidos -----------------------------------------------------
+
+TEST(AutoresMaisLidos, DiarioVazioRetornaListaVazia) {
+    EXPECT_TRUE(Diario{}.autoresMaisLidos().empty());
+}
+
+TEST(AutoresMaisLidos, OrdenaPelaQuantidadeDeLivros) {
+    Diario d;
+    d.adicionar(livro("A", "Jorge Amado", 3));
+    d.adicionar(livro("B", "Machado de Assis", 3));
+    d.adicionar(livro("C", "Machado de Assis", 3));
+
+    const auto autores = d.autoresMaisLidos();
+    ASSERT_EQ(autores.size(), 2u);
+    EXPECT_EQ(autores[0].autor, "Machado de Assis");
+    EXPECT_EQ(autores[0].livros, 2);
+    EXPECT_EQ(autores[1].autor, "Jorge Amado");
+    EXPECT_EQ(autores[1].livros, 1);
+}
+
+TEST(AutoresMaisLidos, LimitaAQuantidadePedida) {
+    Diario d;
+    for (const auto* autor : {"A", "B", "C", "D"}) d.adicionar(livro("Livro", autor, 3));
+    EXPECT_EQ(d.autoresMaisLidos().size(), 3u);  // padrão: top 3
+    EXPECT_EQ(d.autoresMaisLidos(1).size(), 1u);
+}
+
+TEST(AutoresMaisLidos, EmpateDesempataPeloNome) {
+    Diario d;
+    d.adicionar(livro("A", "Rachel de Queiroz", 3));
+    d.adicionar(livro("B", "clarice Lispector", 3));
+    d.adicionar(livro("C", "Graciliano Ramos", 3));
+
+    const auto autores = d.autoresMaisLidos();
+    ASSERT_EQ(autores.size(), 3u);
+    // Ordem alfabética sem diferenciar maiúsculas: "clarice" vem antes de "Graciliano".
+    EXPECT_EQ(autores[0].autor, "clarice Lispector");
+    EXPECT_EQ(autores[1].autor, "Graciliano Ramos");
+    EXPECT_EQ(autores[2].autor, "Rachel de Queiroz");
+}
+
+TEST(AutoresMaisLidos, AgrupaMesmoAutorComMaiusculasEEspacosDiferentes) {
+    Diario d;
+    d.adicionar(livro("A", "Machado de Assis", 3));
+    d.adicionar(livro("B", "MACHADO DE ASSIS", 3));
+    d.adicionar(livro("C", "  machado de assis ", 3));
+
+    const auto autores = d.autoresMaisLidos();
+    ASSERT_EQ(autores.size(), 1u);
+    EXPECT_EQ(autores[0].autor, "Machado de Assis");  // nome do primeiro registro
+    EXPECT_EQ(autores[0].livros, 3);
+}
+
 // ---- Persistência -----------------------------------------------------------
 
 TEST(Persistencia, SalvarECarregarPreservaDadosEContadorDeId) {

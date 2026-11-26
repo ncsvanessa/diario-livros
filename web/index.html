@@ -215,6 +215,27 @@
   .pessoas a { color: var(--tinta); font-weight: 600; text-decoration: none; }
   .pessoas a:hover { color: var(--acento); text-decoration: underline; }
 
+  /* ---- Feed ---- */
+  .feed { list-style: none; margin: 0; padding: 0; max-width: 640px; display: flex; flex-direction: column; gap: 14px; }
+  .post {
+    background: var(--cartao); border: 1px solid var(--linha); border-radius: var(--raio);
+    box-shadow: var(--sombra); padding: 14px 16px;
+  }
+  .post-topo { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--tinta-suave); }
+  .post-topo a { color: var(--tinta); font-weight: 600; text-decoration: none; }
+  .post-topo a:hover { color: var(--acento); text-decoration: underline; }
+  .post-topo time { margin-left: auto; font-size: 12px; white-space: nowrap; }
+  .post-livro { display: flex; gap: 14px; margin-top: 12px; }
+  .post-livro .mini-capa {
+    width: 56px; height: 84px; flex: 0 0 56px; border-radius: 4px; object-fit: cover;
+    background: linear-gradient(160deg, #9c3d2e, #6e2a20); border: 1px solid var(--linha);
+  }
+  .post-livro h3 { font-family: Fraunces, Georgia, serif; font-size: 17px; margin: 0; line-height: 1.25; }
+  .post-livro .autor { color: var(--tinta-suave); font-size: 13px; }
+  .post-livro .nota { color: var(--estrela); letter-spacing: 1px; margin-top: 4px; }
+  .post-livro .nota .vazia { color: var(--linha); }
+  .post-livro .datas { font-size: 12px; color: var(--tinta-suave); margin-top: 2px; }
+
   /* ---- Perfil ---- */
   .perfil-topo { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 24px; margin-bottom: 24px; }
   .perfil-topo .avatar { width: 64px; height: 64px; flex-basis: 64px; font-size: 28px; }
@@ -353,7 +374,11 @@
 
 <section class="secao" id="feed" aria-labelledby="feed-titulo" hidden>
   <h2 id="feed-titulo">Feed</h2>
-  <div class="vazio"><b>Nada por aqui ainda</b>Siga pessoas para ver o que elas estão lendo.</div>
+  <p class="pessoas-aviso" id="feed-aviso" role="status" hidden></p>
+  <ol class="feed" id="lista-feed" aria-label="Leituras de quem você segue"></ol>
+  <div class="vazio" id="feed-vazio" hidden>
+    <b>Nada por aqui ainda</b>Siga pessoas na aba <a href="#/pessoas">Pessoas</a> para ver o que elas estão lendo.
+  </div>
 </section>
 
 <section class="secao" id="pessoas" aria-labelledby="pessoas-titulo" hidden>
@@ -488,7 +513,8 @@ function mostrarAcesso() {
   $("grade").replaceChildren();
   // A busca de pessoas de quem saiu também não fica na página.
   $("busca-pessoas").value = "";
-  buscarPessoas();  // com o campo vazio, só limpa a lista e volta o aviso inicial
+  buscarPessoas();
+  $("lista-feed").replaceChildren();  // com o campo vazio, só limpa a lista e volta o aviso inicial
   $("acesso").hidden = false;
   $("form-acesso").reset();
   definirModoAcesso("entrar");
@@ -528,6 +554,7 @@ function mostrarSecao() {
       else a.removeAttribute("aria-current");
     }
     if (secao === "perfil") carregarPerfil(login);
+    if (secao === "feed") carregarFeed();
   }
 }
 window.addEventListener("hashchange", mostrarSecao);
@@ -584,6 +611,93 @@ async function buscarPessoas() {
   }));
   aviso.textContent = "Ninguém encontrado com esse nome.";
   aviso.hidden = pessoas.length > 0;
+}
+
+// ---- Feed: leituras de quem o usuário segue -----------------------------------
+// "há 5 min", "há 2 h", "há 3 dias"; mais de uma semana: a data.
+function tempoDesde(iso, agora = new Date()) {
+  const segundos = Math.max(0, (agora - new Date(iso)) / 1000);
+  if (segundos < 60) return "agora";
+  if (segundos < 3600) return `há ${Math.floor(segundos / 60)} min`;
+  if (segundos < 86400) return `há ${Math.floor(segundos / 3600)} h`;
+  const dias = Math.floor(segundos / 86400);
+  if (dias < 7) return `há ${dias} dia${dias > 1 ? "s" : ""}`;
+  return fmtData(iso.slice(0, 10));
+}
+
+function post({ login, livro: l }) {
+  const li = document.createElement("li");
+  const art = document.createElement("article");
+  art.className = "post";
+
+  const topo = document.createElement("div");
+  topo.className = "post-topo";
+  const quem = document.createElement("a");
+  quem.href = `#/perfil/${encodeURIComponent(login)}`;
+  quem.textContent = login;
+  topo.append(avatar(login), quem, " registrou uma leitura");
+  if (l.registradoEm) {
+    const t = document.createElement("time");
+    t.dateTime = l.registradoEm;
+    t.title = new Date(l.registradoEm).toLocaleString("pt-BR");
+    t.textContent = tempoDesde(l.registradoEm);
+    topo.append(t);
+  }
+
+  const corpo = document.createElement("div");
+  corpo.className = "post-livro";
+  let capa;
+  if (l.capaUrl) {
+    capa = document.createElement("img");
+    capa.src = l.capaUrl;
+    capa.alt = `Capa de ${l.titulo}`;
+    capa.loading = "lazy";
+  } else {
+    capa = document.createElement("div");
+    capa.setAttribute("aria-hidden", "true");
+  }
+  capa.className = "mini-capa";
+
+  const info = document.createElement("div");
+  const h = document.createElement("h3"); h.textContent = l.titulo;
+  const au = document.createElement("div"); au.className = "autor"; au.textContent = l.autor;
+  const nota = document.createElement("div");
+  nota.className = "nota";
+  nota.setAttribute("aria-label", `${l.nota} de 5 estrelas`);
+  nota.textContent = "★".repeat(l.nota);
+  const vaz = document.createElement("span"); vaz.className = "vazia"; vaz.textContent = "★".repeat(5 - l.nota);
+  nota.append(vaz);
+  info.append(h, au, nota);
+  if (l.dataLeitura) {
+    const d = document.createElement("div");
+    d.className = "datas";
+    d.textContent = `Lido em ${fmtData(l.dataLeitura)}`;
+    info.append(d);
+  }
+  corpo.append(capa, info);
+
+  art.append(topo, corpo);
+  li.append(art);
+  return li;
+}
+
+let ultimoFeed = 0;  // descarta respostas que chegam fora de ordem
+
+async function carregarFeed() {
+  const minhaVez = ++ultimoFeed;
+  let itens;
+  try {
+    itens = await api("GET", "/api/feed");
+  } catch (err) {
+    if (minhaVez !== ultimoFeed) return;
+    $("feed-aviso").textContent = frases(err.message);
+    $("feed-aviso").hidden = false;
+    return;
+  }
+  if (minhaVez !== ultimoFeed) return;
+  $("feed-aviso").hidden = true;
+  $("lista-feed").replaceChildren(...itens.map(post));
+  $("feed-vazio").hidden = itens.length > 0;
 }
 
 // ---- Perfil de um usuário ----------------------------------------------------

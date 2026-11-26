@@ -160,7 +160,9 @@ int main(int argc, char** argv) {
         }
     });
 
-    srv.Put(R"(/api/livros/(\d+))", [&](const httplib::Request& req, httplib::Response& res) {
+    // Ids com no máximo 9 dígitos cabem em int; um id maior não casa com a rota
+    // e recebe 404, em vez de estourar std::stoi (std::out_of_range -> erro 500).
+    srv.Put(R"(/api/livros/(\d{1,9}))", [&](const httplib::Request& req, httplib::Response& res) {
         const int id = std::stoi(req.matches[1]);
         try {
             auto livro = json::parse(req.body).get<diario::Livro>();
@@ -182,7 +184,7 @@ int main(int argc, char** argv) {
         }
     });
 
-    srv.Delete(R"(/api/livros/(\d+))", [&](const httplib::Request& req, httplib::Response& res) {
+    srv.Delete(R"(/api/livros/(\d{1,9}))", [&](const httplib::Request& req, httplib::Response& res) {
         const int id = std::stoi(req.matches[1]);
         std::lock_guard<std::mutex> lock(mtx);
         auto novo = dl;

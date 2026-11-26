@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
-project(DiarioDeLivros VERSION 1.0 LANGUAGES CXX)
+# C: só para compilar o Monocypher (biblioteca de criptografia escrita em C).
+project(DiarioDeLivros VERSION 1.0 LANGUAGES C CXX)
 
 # O padrão pode ser sobrescrito na linha de comando (o CI testa 17 e 20):
 #   cmake -S . -B build -DCMAKE_CXX_STANDARD=20
@@ -28,6 +29,22 @@ endif()
 FetchContent_Declare(json
   URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
 FetchContent_MakeAvailable(json)
+
+# Monocypher: Argon2id (hash de senha) e BLAKE2b (assinatura do token de sessão).
+# Um único arquivo C, sem dependências de sistema: compila igual nos 3 sistemas.
+# O repositório não tem CMakeLists, então o alvo é definido aqui.
+FetchContent_Declare(monocypher
+  GIT_REPOSITORY https://github.com/LoupVaillant/Monocypher.git
+  GIT_TAG 4.0.2
+  GIT_SHALLOW TRUE)
+FetchContent_MakeAvailable(monocypher)
+add_library(monocypher STATIC ${monocypher_SOURCE_DIR}/src/monocypher.c)
+target_include_directories(monocypher SYSTEM PUBLIC ${monocypher_SOURCE_DIR}/src)
+# Argon2 é lento de propósito; sem otimização (build Debug/cobertura) os testes ficariam
+# vários segundos mais lentos. Não vale para MSVC, onde /O2 conflita com /RTC1 do Debug.
+if(NOT MSVC)
+  target_compile_options(monocypher PRIVATE -O2)
+endif()
 
 # ---- Núcleo (testável, sem dependência de rede) --------------------------------
 add_library(diario_core src/diario.cpp src/repositorio.cpp)

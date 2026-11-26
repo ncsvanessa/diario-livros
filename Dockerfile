@@ -25,8 +25,13 @@ COPY web ./web
 USER diario
 
 # A plataforma de nuvem informa a porta em PORT; 8080 é o padrão para rodar localmente.
-# DATABASE_URL (segredo) é configurada na plataforma; sem ela, os dados vão para um
-# arquivo dentro do container e se perdem quando ele reinicia.
-ENV PORT=8080
+# Segredos configurados na plataforma, nunca na imagem:
+#   DATABASE_URL   - sem ela, os dados vão para um arquivo dentro do container e se
+#                    perdem quando ele reinicia;
+#   SESSION_SECRET - sem ela, um segredo aleatório é gerado a cada início e todos
+#                    precisam entrar de novo após um reinício.
+# COOKIE_SEGURO=sim: o cookie de sessão só trafega por HTTPS (o Render serve por HTTPS).
+# Para testar a imagem em http://localhost, use -e COOKIE_SEGURO=nao.
+ENV PORT=8080 COOKIE_SEGURO=sim
 EXPOSE 8080
-CMD ["sh", "-c", "exec ./diario_server --host 0.0.0.0 --porta \"$PORT\" --web /app/web --dados /home/diario/diario.json"]
+CMD ["sh", "-c", "exec ./diario_server --host 0.0.0.0 --porta \"$PORT\" --web /app/web --dados /home/diario/diario.json --cookie-seguro \"$COOKIE_SEGURO\""]

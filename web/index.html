@@ -199,6 +199,20 @@
   .secao { max-width: 1120px; margin: 0 auto; padding: 20px; }
   .secao h2 { font-family: Fraunces, Georgia, serif; font-size: 24px; margin: 0 0 16px; }
 
+  /* ---- Pessoas ---- */
+  .busca-pessoas { max-width: 420px; }
+  .pessoas { list-style: none; margin: 16px 0 0; padding: 0; max-width: 420px; }
+  .pessoas li {
+    display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--linha);
+  }
+  .pessoas li:first-child { border-top: 0; }
+  .avatar {
+    width: 36px; height: 36px; flex: 0 0 36px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--acento); color: #fff; font: 700 15px Fraunces, Georgia, serif; text-transform: uppercase;
+  }
+  .pessoas .voce { font-size: 12px; color: var(--tinta-suave); }
+  .pessoas-aviso { color: var(--tinta-suave); font-size: 14px; margin: 16px 0 0; }
+
   /* Data de lançamento só com o ano: pede para conferir dia e mês. */
   input.conferir { border-color: var(--estrela); background: color-mix(in srgb, var(--estrela) 10%, var(--papel)); }
   .dica { font-size: 12px; color: var(--estrela); margin: 4px 0 0; }
@@ -333,6 +347,10 @@
 
 <section class="secao" id="pessoas" aria-labelledby="pessoas-titulo" hidden>
   <h2 id="pessoas-titulo">Pessoas</h2>
+  <input type="search" class="busca-pessoas" id="busca-pessoas" placeholder="Buscar pelo nome de usuário"
+         aria-label="Buscar pessoas" autocomplete="off" autocapitalize="none" spellcheck="false">
+  <ul class="pessoas" id="lista-pessoas" aria-label="Pessoas encontradas"></ul>
+  <p class="pessoas-aviso" id="pessoas-aviso">Digite parte de um nome de usuário para encontrar pessoas.</p>
 </section>
 
 <script>
@@ -438,6 +456,9 @@ function mostrarAcesso() {
   $("stats").hidden = true;
   $("conta").hidden = true;
   $("grade").replaceChildren();
+  // A busca de pessoas de quem saiu também não fica na página.
+  $("busca-pessoas").value = "";
+  buscarPessoas();  // com o campo vazio, só limpa a lista e volta o aviso inicial
   $("acesso").hidden = false;
   $("form-acesso").reset();
   definirModoAcesso("entrar");
@@ -476,6 +497,64 @@ function mostrarSecao() {
   }
 }
 window.addEventListener("hashchange", mostrarSecao);
+
+// ---- Pessoas: busca por login -------------------------------------------------
+let buscaPessoasTimer;
+let ultimaBuscaPessoas = 0;  // descarta respostas que chegam fora de ordem
+
+function avatar(login) {
+  const a = document.createElement("span");
+  a.className = "avatar";
+  a.setAttribute("aria-hidden", "true");
+  a.textContent = login.charAt(0);
+  return a;
+}
+
+async function buscarPessoas() {
+  const termo = $("busca-pessoas").value.trim();
+  const lista = $("lista-pessoas");
+  const aviso = $("pessoas-aviso");
+  if (!termo) {
+    lista.replaceChildren();
+    aviso.textContent = "Digite parte de um nome de usuário para encontrar pessoas.";
+    aviso.hidden = false;
+    return;
+  }
+  const minhaBusca = ++ultimaBuscaPessoas;
+  let pessoas;
+  try {
+    pessoas = await api("GET", `/api/usuarios?${new URLSearchParams({ q: termo })}`);
+  } catch (err) {
+    if (minhaBusca !== ultimaBuscaPessoas) return;
+    lista.replaceChildren();
+    aviso.textContent = frases(err.message);
+    aviso.hidden = false;
+    return;
+  }
+  if (minhaBusca !== ultimaBuscaPessoas) return;
+
+  const eu = $("usuario-login").textContent;
+  lista.replaceChildren(...pessoas.map((p) => {
+    const li = document.createElement("li");
+    const nome = document.createElement("span");
+    nome.textContent = p.login;
+    li.append(avatar(p.login), nome);
+    if (p.login === eu) {
+      const voce = document.createElement("span");
+      voce.className = "voce";
+      voce.textContent = "(você)";
+      li.append(voce);
+    }
+    return li;
+  }));
+  aviso.textContent = "Ninguém encontrado com esse nome.";
+  aviso.hidden = pessoas.length > 0;
+}
+
+$("busca-pessoas").oninput = () => {
+  clearTimeout(buscaPessoasTimer);
+  buscaPessoasTimer = setTimeout(buscarPessoas, 250);
+};
 
 $("btn-alternar").onclick = () => definirModoAcesso(modoAcesso === "entrar" ? "cadastrar" : "entrar");
 

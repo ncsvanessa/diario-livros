@@ -22,6 +22,12 @@ Livro livro(const std::string& titulo, const std::string& autor, int nota) {
     return l;
 }
 
+std::vector<std::string> titulos(const std::vector<Livro>& livros) {
+    std::vector<std::string> out;
+    for (const auto& l : livros) out.push_back(l.titulo);
+    return out;
+}
+
 }  // namespace
 
 // ---- Validação de dados -----------------------------------------------------
@@ -138,11 +144,13 @@ TEST(Validacao, LeituraNoDiaDoLancamentoEhAceita) {
 
 // ---- Operações do diário ----------------------------------------------------
 
-TEST(Diario, AdicionarAtribuiIdsSequenciais) {
+TEST(Diario, AdicionarAtribuiIdsSequenciaisAPartirDeUm) {
     Diario d;
-    EXPECT_EQ(d.adicionar(livro("A", "X", 1)), 1);
-    EXPECT_EQ(d.adicionar(livro("B", "Y", 2)), 2);
-    EXPECT_EQ(d.tamanho(), 2u);
+
+    const int primeiro = d.adicionar(livro("A", "X", 1));
+    const int segundo = d.adicionar(livro("B", "Y", 2));
+
+    EXPECT_EQ((std::vector<int>{primeiro, segundo}), (std::vector<int>{1, 2}));
 }
 
 TEST(Diario, AdicionarLivroInvalidoLancaExcecaoENaoAltera) {
@@ -151,23 +159,67 @@ TEST(Diario, AdicionarLivroInvalidoLancaExcecaoENaoAltera) {
     EXPECT_EQ(d.tamanho(), 0u);
 }
 
-TEST(Diario, RemoverNaoReutilizaId) {
+TEST(Diario, RemoverLivroExistenteTiraEleDoDiario) {
     Diario d;
     const int id = d.adicionar(livro("A", "X", 1));
-    EXPECT_TRUE(d.remover(id));
-    EXPECT_FALSE(d.remover(id));
-    EXPECT_EQ(d.adicionar(livro("B", "Y", 2)), 2);
+
+    const bool removeu = d.remover(id);
+
+    EXPECT_TRUE(removeu);
+    EXPECT_FALSE(d.buscar(id).has_value());
 }
 
-TEST(Diario, AtualizarPreservaIdEValida) {
+TEST(Diario, RemoverLivroJaRemovidoRetornaFalse) {
     Diario d;
     const int id = d.adicionar(livro("A", "X", 1));
-    EXPECT_TRUE(d.atualizar(id, livro("A (2a ed.)", "X", 4)));
+    d.remover(id);
+
+    EXPECT_FALSE(d.remover(id));
+}
+
+TEST(Diario, IdDeLivroRemovidoNaoEhReaproveitado) {
+    Diario d;
+    d.remover(d.adicionar(livro("A", "X", 1)));
+
+    const int novo = d.adicionar(livro("B", "Y", 2));
+
+    EXPECT_EQ(novo, 2);
+}
+
+TEST(Diario, AtualizarSubstituiOsDadosDoLivro) {
+    Diario d;
+    const int id = d.adicionar(livro("A", "X", 1));
+
+    const bool atualizou = d.atualizar(id, livro("A (2a ed.)", "X", 4));
+
+    EXPECT_TRUE(atualizou);
     EXPECT_EQ(d.buscar(id)->titulo, "A (2a ed.)");
+}
+
+TEST(Diario, AtualizarMantemOIdOriginal) {
+    Diario d;
+    const int id = d.adicionar(livro("A", "X", 1));
+    Livro editado = livro("A (2a ed.)", "X", 4);
+    editado.id = 999;  // um id diferente vindo do cliente é ignorado
+
+    d.atualizar(id, editado);
+
     EXPECT_EQ(d.buscar(id)->id, id);
+}
+
+TEST(Diario, AtualizarIdInexistenteRetornaFalse) {
+    Diario d;
+    d.adicionar(livro("A", "X", 1));
+
     EXPECT_FALSE(d.atualizar(999, livro("Z", "Z", 1)));
+}
+
+TEST(Diario, AtualizarComDadosInvalidosLancaExcecaoEMantemOLivro) {
+    Diario d;
+    const int id = d.adicionar(livro("A", "X", 4));
+
     EXPECT_THROW(d.atualizar(id, livro("", "X", 1)), std::invalid_argument);
-    EXPECT_EQ(d.buscar(id)->nota, 4);  // falha não altera o registro
+    EXPECT_EQ(d.buscar(id)->nota, 4);
 }
 
 TEST(Diario, AtualizarMantemQuandoOLivroFoiRegistrado) {
@@ -201,12 +253,16 @@ TEST(Persistencia, LivroAntigoSemRegistroCarregaComCampoVazio) {
     EXPECT_EQ(d.listar().at(0).registradoEm, "");
 }
 
-TEST(Diario, MediaDasNotas) {
+TEST(Diario, MediaDeDiarioVazioEhZero) {
+    EXPECT_DOUBLE_EQ(Diario{}.mediaNotas(), 0.0);
+}
+
+TEST(Diario, MediaEhAMediaAritmeticaDasNotas) {
     Diario d;
-    EXPECT_DOUBLE_EQ(d.mediaNotas(), 0.0);
     d.adicionar(livro("A", "X", 5));
     d.adicionar(livro("B", "X", 2));
     d.adicionar(livro("C", "X", 0));
+
     EXPECT_NEAR(d.mediaNotas(), 7.0 / 3.0, 1e-9);
 }
 
@@ -215,33 +271,47 @@ TEST(Diario, OrdenaPorNotaDecrescenteEDepoisPorTitulo) {
     d.adicionar(livro("C", "X", 3));
     d.adicionar(livro("B", "X", 5));
     d.adicionar(livro("A", "X", 3));
-    const auto ord = d.ordenadosPorNota();
-    ASSERT_EQ(ord.size(), 3u);
-    EXPECT_EQ(ord[0].titulo, "B");
-    EXPECT_EQ(ord[1].titulo, "A");
-    EXPECT_EQ(ord[2].titulo, "C");
+
+    const auto ordenados = d.ordenadosPorNota();
+
+    EXPECT_EQ(titulos(ordenados), (std::vector<std::string>{"B", "A", "C"}));
 }
 
-TEST(Diario, PesquisaIgnoraMaiusculasEBuscaEmTituloEAutor) {
-    Diario d;
-    d.adicionar(livro("Dom Casmurro", "Machado de Assis", 5));
-    d.adicionar(livro("Grande Sertão: Veredas", "Guimarães Rosa", 4));
-    EXPECT_EQ(d.pesquisar("casmurro").size(), 1u);
-    EXPECT_EQ(d.pesquisar("MACHADO").size(), 1u);
-    EXPECT_EQ(d.pesquisar("o").size(), 2u);
-    EXPECT_EQ(d.pesquisar("").size(), 2u);
-    EXPECT_TRUE(d.pesquisar("tolkien").empty());
+// Diário com dois livros, de autores diferentes, para os testes de pesquisa.
+class Pesquisa : public ::testing::Test {
+protected:
+    void SetUp() override {
+        diario.adicionar(livro("Dom Casmurro", "Machado de Assis", 5));
+        diario.adicionar(livro("Grande Sertão: Veredas", "Guimarães Rosa", 4));
+    }
+
+    Diario diario;
+};
+
+TEST_F(Pesquisa, EncontraPeloTituloIgnorandoMaiusculas) {
+    EXPECT_EQ(titulos(diario.pesquisar("casmurro")), (std::vector<std::string>{"Dom Casmurro"}));
+}
+
+TEST_F(Pesquisa, EncontraPeloAutorIgnorandoMaiusculas) {
+    EXPECT_EQ(titulos(diario.pesquisar("MACHADO")), (std::vector<std::string>{"Dom Casmurro"}));
+}
+
+TEST_F(Pesquisa, TrechoPresenteEmVariosLivrosDevolveTodosNaOrdemDeInsercao) {
+    EXPECT_EQ(titulos(diario.pesquisar("o")),
+              (std::vector<std::string>{"Dom Casmurro", "Grande Sertão: Veredas"}));
+}
+
+TEST_F(Pesquisa, TermoVazioDevolveTodosOsLivros) {
+    EXPECT_EQ(diario.pesquisar("").size(), 2u);
+}
+
+TEST_F(Pesquisa, TermoSemCorrespondenciaDevolveListaVazia) {
+    EXPECT_TRUE(diario.pesquisar("tolkien").empty());
 }
 
 // ---- Filtro por nota mínima -------------------------------------------------
 
 namespace {
-
-std::vector<std::string> titulos(const std::vector<Livro>& livros) {
-    std::vector<std::string> out;
-    for (const auto& l : livros) out.push_back(l.titulo);
-    return out;
-}
 
 Diario diarioComNotas() {
     Diario d;

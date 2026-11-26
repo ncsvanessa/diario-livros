@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { test as base, expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
 export type LivroDados = {
@@ -44,6 +45,8 @@ export class DiarioPage {
 
   async abrir() {
     await this.page.goto("/");
+    // A página confere a sessão (/api/eu) antes de mostrar o diário.
+    await expect(this.page.getByRole("button", { name: "Sair" })).toBeVisible();
   }
 
   async escolherNota(nota: number) {
@@ -75,6 +78,39 @@ export class DiarioPage {
   }
 }
 
+// Tela de acesso: entrar e criar conta.
+export class AcessoPage {
+  readonly usuario: Locator;
+  readonly senha: Locator;
+  readonly erro: Locator;
+  readonly sair: Locator;
+
+  constructor(readonly page: Page) {
+    this.usuario = page.getByLabel("Usuário");
+    this.senha = page.getByLabel("Senha");
+    this.erro = page.getByRole("alert");
+    this.sair = page.getByRole("button", { name: "Sair" });
+  }
+
+  async abrir() {
+    await this.page.goto("/");
+  }
+
+  async entrar(login: string, senha: string) {
+    await this.usuario.fill(login);
+    await this.senha.fill(senha);
+    await this.page.getByRole("button", { name: "Entrar", exact: true }).click();
+  }
+
+  async criarConta(login: string, senha: string) {
+    // "Criar conta" primeiro alterna o formulário; no modo cadastro vira o botão de envio.
+    await this.page.getByRole("button", { name: "Criar conta" }).click();
+    await this.usuario.fill(login);
+    await this.senha.fill(senha);
+    await this.page.getByRole("button", { name: "Criar conta" }).click();
+  }
+}
+
 // Cria livros direto pela API: prepara o cenário rápido, sem passar pela interface
 // que não é o foco do teste.
 export async function cadastrarPelaApi(request: APIRequestContext, livros: LivroDados[]) {
@@ -84,17 +120,33 @@ export async function cadastrarPelaApi(request: APIRequestContext, livros: Livro
   }
 }
 
-async function esvaziarDiario(request: APIRequestContext) {
-  const r = await request.get("/api/livros");
-  for (const livro of (await r.json()) as { id: number }[]) {
-    await request.delete(`/api/livros/${livro.id}`);
-  }
+// Login único por teste: cada teste tem a própria conta e, portanto, um diário vazio,
+// sem depender da ordem de execução nem do que outros testes deixaram no servidor.
+export function loginUnico(): string {
+  return `e2e-${randomBytes(6).toString("hex")}`;
 }
 
-export const test = base.extend<{ diario: DiarioPage }>({
-  diario: async ({ page, request }, use) => {
-    // Cada teste começa com o diário vazio, independente da ordem de execução.
-    await esvaziarDiario(request);
+export const SENHA = "senha-de-teste-e2e";
+
+export async function criarContaPelaApi(request: APIRequestContext, login: string, senha = SENHA) {
+  const r = await request.post("/api/cadastro", { data: { login, senha } });
+  expect(r.status(), await r.text()).toBe(201);
+}
+
+export const test = base.extend<{ diario: DiarioPage; login: string }>({
+  // `request` passa a ser o da página: compartilha os cookies do navegador, então as
+  // chamadas de API dos testes são feitas como o usuário logado na página.
+  request: async ({ page }, use) => {
+    await use(page.request);
+  },
+
+  login: async ({}, use) => {
+    await use(loginUnico());
+  },
+
+  diario: async ({ page, request, login }, use) => {
+    // Cria a conta pela API (o cookie de sessão fica no navegador) antes de abrir a página.
+    await criarContaPelaApi(request, login);
 
     // A página consulta a Open Library ao digitar o título. Nos testes, nada sai para
     // a internet: por padrão a busca não retorna resultados, e cada teste pode

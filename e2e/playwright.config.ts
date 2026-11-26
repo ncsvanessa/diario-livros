@@ -25,12 +25,16 @@ if (!servidor) {
 }
 
 // Porta e arquivo próprios para não mexer no diário de quem roda os testes.
+// O arquivo é novo a cada execução (o pid do processo principal entra no nome): um arquivo
+// que sobrou de execuções anteriores, talvez num formato antigo, não interfere.
 const PORTA = 8089;
-const dados = path.join(tmpdir(), "diario-livros-e2e.json");
+const dados = path.join(tmpdir(), `diario-livros-e2e-${process.pid}.json`);
 
 export default defineConfig({
   testDir: "./tests",
-  // Todos os testes compartilham o mesmo servidor (e o mesmo diário), então rodam em série.
+  // Cada teste usa uma conta própria, então não há estado compartilhado entre eles.
+  // Mesmo assim rodam em série: com vários navegadores em paralelo numa máquina pequena
+  // (como os runners do CI), surgiram falhas intermitentes por tempo de espera.
   workers: 1,
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
@@ -46,7 +50,8 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"], channel: "chromium" } }],
   webServer: {
     command: `"${servidor}" --host 127.0.0.1 --porta ${PORTA} --dados "${dados}" --web "${path.join(raiz, "web")}"`,
-    url: `http://127.0.0.1:${PORTA}/api/estatisticas`,
+    // Rota pública: as demais exigem login.
+    url: `http://127.0.0.1:${PORTA}/api/saude`,
     // Nunca reaproveita um servidor já aberto: poderia ser o diário real do usuário.
     reuseExistingServer: false,
     timeout: 30_000,

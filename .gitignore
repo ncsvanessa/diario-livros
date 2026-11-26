@@ -1,12 +1,17 @@
+# Builds (CMake)
 build/
+build-*/
+cmake-build-*/
 out/
+
+# Editores
 .vs/
 .vscode/
 .idea/
-cmake-build-*/
+
+# Dados locais do servidor: contas (com hash de senha) e livros
 diario.json
-build/
-build-*/
+
 # Playwright (e2e)
 e2e/node_modules/
 e2e/test-results/

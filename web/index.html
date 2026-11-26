@@ -212,6 +212,17 @@
   }
   .pessoas .voce { font-size: 12px; color: var(--tinta-suave); }
   .pessoas-aviso { color: var(--tinta-suave); font-size: 14px; margin: 16px 0 0; }
+  .pessoas a { color: var(--tinta); font-weight: 600; text-decoration: none; }
+  .pessoas a:hover { color: var(--acento); text-decoration: underline; }
+
+  /* ---- Perfil ---- */
+  .perfil-topo { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 24px; margin-bottom: 24px; }
+  .perfil-topo .avatar { width: 64px; height: 64px; flex-basis: 64px; font-size: 28px; }
+  .perfil-topo h2 { margin: 0; }
+  .perfil-topo .stats { flex: 1; }
+  .perfil-topo .btn { flex: 0 0 auto; min-width: 150px; }
+  .perfil-topo .btn.seguindo { background: none; color: var(--tinta); border-color: var(--linha); }
+  .perfil-topo .eh-voce { font-size: 13px; color: var(--tinta-suave); }
 
   /* Data de lançamento só com o ano: pede para conferir dia e mês. */
   input.conferir { border-color: var(--estrela); background: color-mix(in srgb, var(--estrela) 10%, var(--papel)); }
@@ -353,6 +364,25 @@
   <p class="pessoas-aviso" id="pessoas-aviso">Digite parte de um nome de usuário para encontrar pessoas.</p>
 </section>
 
+<section class="secao" id="perfil" aria-labelledby="perfil-login" hidden>
+  <p class="pessoas-aviso" id="perfil-aviso" role="status"></p>
+  <div id="perfil-conteudo" hidden>
+    <div class="perfil-topo">
+      <span class="avatar" id="perfil-avatar" aria-hidden="true"></span>
+      <h2 id="perfil-login"></h2>
+      <div class="stats">
+        <div class="stat"><b id="perfil-total">0</b><span>livros</span></div>
+        <div class="stat"><b id="perfil-media">–</b><span>nota média</span></div>
+        <div class="stat"><b id="perfil-seguidores">0</b><span>seguidores</span></div>
+        <div class="stat"><b id="perfil-seguindo">0</b><span>seguindo</span></div>
+      </div>
+      <button type="button" class="btn" id="btn-seguir">Seguir</button>
+      <span class="eh-voce" id="perfil-eh-voce" hidden>Este é o seu perfil.</span>
+    </div>
+    <div class="grade" id="perfil-livros" aria-label="Livros do perfil"></div>
+  </div>
+</section>
+
 <script>
 const $ = (id) => document.getElementById(id);
 let notaAtual = 0;
@@ -479,21 +509,25 @@ function entrouComo(login) {
 // A seção fica no endereço (#/feed, #/pessoas): recarregar a página ou usar o botão
 // voltar do navegador mantém a seção certa. A barra em "#/" evita que o navegador
 // role a página até o elemento de mesmo id.
-const SECOES = ["diario", "feed", "pessoas"];
+// O perfil não é uma aba: abre em #/perfil/<login>, e a aba Pessoas fica destacada.
+const SECOES = ["diario", "feed", "pessoas", "perfil"];
 
 function secaoAtual() {
-  const s = location.hash.replace(/^#\/?/, "");
-  return SECOES.includes(s) ? s : "diario";
+  const [s, ...resto] = location.hash.replace(/^#\/?/, "").split("/");
+  if (s === "perfil" && resto[0]) return { secao: "perfil", login: decodeURIComponent(resto[0]) };
+  return { secao: SECOES.includes(s) && s !== "perfil" ? s : "diario" };
 }
 
 function mostrarSecao() {
   if (!$("conta").hidden) {
-    const atual = secaoAtual();
-    for (const s of SECOES) $(s).hidden = s !== atual;
+    const { secao, login } = secaoAtual();
+    for (const s of SECOES) $(s).hidden = s !== secao;
+    const aba = secao === "perfil" ? "pessoas" : secao;
     for (const a of $("abas").querySelectorAll("a")) {
-      if (a.dataset.secao === atual) a.setAttribute("aria-current", "page");
+      if (a.dataset.secao === aba) a.setAttribute("aria-current", "page");
       else a.removeAttribute("aria-current");
     }
+    if (secao === "perfil") carregarPerfil(login);
   }
 }
 window.addEventListener("hashchange", mostrarSecao);
@@ -536,7 +570,8 @@ async function buscarPessoas() {
   const eu = $("usuario-login").textContent;
   lista.replaceChildren(...pessoas.map((p) => {
     const li = document.createElement("li");
-    const nome = document.createElement("span");
+    const nome = document.createElement("a");
+    nome.href = `#/perfil/${encodeURIComponent(p.login)}`;
     nome.textContent = p.login;
     li.append(avatar(p.login), nome);
     if (p.login === eu) {
@@ -550,6 +585,71 @@ async function buscarPessoas() {
   aviso.textContent = "Ninguém encontrado com esse nome.";
   aviso.hidden = pessoas.length > 0;
 }
+
+// ---- Perfil de um usuário ----------------------------------------------------
+let perfilAberto = null;   // login do perfil na tela
+let ultimoPerfil = 0;      // descarta respostas que chegam fora de ordem
+
+async function carregarPerfil(login) {
+  const minhaVez = ++ultimoPerfil;
+  perfilAberto = login;
+  $("perfil-conteudo").hidden = true;
+  $("perfil-aviso").textContent = "Carregando…";
+  let p;
+  try {
+    p = await api("GET", `/api/usuarios/${encodeURIComponent(login)}`);
+  } catch (err) {
+    if (minhaVez === ultimoPerfil) $("perfil-aviso").textContent = frases(err.message);
+    return;
+  }
+  if (minhaVez !== ultimoPerfil) return;
+
+  $("perfil-aviso").textContent = "";
+  $("perfil-avatar").textContent = p.login.charAt(0);
+  $("perfil-login").textContent = p.login;
+  $("perfil-total").textContent = p.total;
+  $("perfil-media").textContent = p.total ? p.media.toFixed(1).replace(".", ",") : "–";
+  $("perfil-seguindo").textContent = p.seguindo;
+  desenharSeguir(p.euSigo, p.seguidores);
+  $("btn-seguir").hidden = p.ehVoce;
+  $("perfil-eh-voce").hidden = !p.ehVoce;
+
+  const grade = $("perfil-livros");
+  if (p.livros.length) {
+    grade.replaceChildren(...p.livros.map((l) => cartao(l, { somenteLeitura: true })));
+  } else {
+    const v = document.createElement("div");
+    v.className = "vazio";
+    v.style.gridColumn = "1 / -1";
+    const b = document.createElement("b");
+    b.textContent = "Nenhum livro ainda";
+    v.append(b, `${p.login} ainda não registrou leituras.`);
+    grade.replaceChildren(v);
+  }
+  $("perfil-conteudo").hidden = false;
+}
+
+function desenharSeguir(euSigo, seguidores) {
+  const b = $("btn-seguir");
+  b.textContent = euSigo ? "Deixar de seguir" : "Seguir";
+  b.classList.toggle("seguindo", euSigo);
+  b.setAttribute("aria-pressed", String(euSigo));
+  $("perfil-seguidores").textContent = seguidores;
+}
+
+$("btn-seguir").onclick = async () => {
+  const b = $("btn-seguir");
+  const seguir = b.getAttribute("aria-pressed") !== "true";
+  b.disabled = true;
+  try {
+    const r = await api(seguir ? "POST" : "DELETE", `/api/usuarios/${encodeURIComponent(perfilAberto)}/seguir`);
+    desenharSeguir(r.euSigo, r.seguidores);
+  } catch (err) {
+    $("perfil-aviso").textContent = frases(err.message);
+  } finally {
+    b.disabled = false;
+  }
+};
 
 $("busca-pessoas").oninput = () => {
   clearTimeout(buscaPessoasTimer);
@@ -594,7 +694,8 @@ function fmtData(iso) {
   return `${d}/${m}/${a}`;
 }
 
-function cartao(l) {
+// somenteLeitura: sem Editar e Remover (livros de outra pessoa).
+function cartao(l, { somenteLeitura = false } = {}) {
   const art = document.createElement("article");
   art.className = "livro";
 
@@ -642,7 +743,8 @@ function cartao(l) {
   const rm = document.createElement("button"); rm.textContent = "Remover"; rm.onclick = () => remover(l);
   ops.append(ed, rm);
 
-  info.append(h, au, nota, datas, ops);
+  info.append(h, au, nota, datas);
+  if (!somenteLeitura) info.append(ops);
   art.append(capa, info);
   return art;
 }

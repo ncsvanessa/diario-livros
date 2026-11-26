@@ -1,5 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { test as base, expect, type APIRequestContext, type Locator, type Page } from "@playwright/test";
+import {
+  test as base,
+  expect,
+  request as novaSessao,
+  type APIRequestContext,
+  type Locator,
+  type Page,
+} from "@playwright/test";
 
 export type LivroDados = {
   titulo: string;
@@ -131,6 +138,56 @@ export const SENHA = "senha-de-teste-e2e";
 export async function criarContaPelaApi(request: APIRequestContext, login: string, senha = SENHA) {
   const r = await request.post("/api/cadastro", { data: { login, senha } });
   expect(r.status(), await r.text()).toBe(201);
+}
+
+// Outra pessoa, com a própria sessão (separada da do navegador do teste), e os livros dela.
+// Devolve o login criado.
+export async function criarOutraPessoa(baseURL: string, livros: LivroDados[] = []): Promise<string> {
+  const login = loginUnico();
+  const sessao = await novaSessao.newContext({ baseURL });
+  try {
+    await criarContaPelaApi(sessao, login);
+    await cadastrarPelaApi(sessao, livros);
+  } finally {
+    await sessao.dispose();
+  }
+  return login;
+}
+
+// Abas Pessoas e Feed e a página de perfil.
+export class SocialPage {
+  readonly buscaPessoas: Locator;
+  readonly pessoasEncontradas: Locator;
+  readonly seguir: Locator;
+  readonly seguidores: Locator;
+  readonly livrosDoPerfil: Locator;
+  readonly posts: Locator;
+  readonly feedVazio: Locator;
+
+  constructor(readonly page: Page) {
+    this.buscaPessoas = page.getByRole("searchbox", { name: "Buscar pessoas" });
+    this.pessoasEncontradas = page.getByRole("list", { name: "Pessoas encontradas" }).getByRole("listitem");
+    this.seguir = page.locator("#btn-seguir");
+    this.seguidores = page.locator("#perfil-seguidores");
+    this.livrosDoPerfil = page.locator("#perfil-livros").getByRole("article");
+    this.posts = page.getByRole("list", { name: "Leituras de quem você segue" }).getByRole("article");
+    this.feedVazio = page.getByText("Nada por aqui ainda");
+  }
+
+  async abrirAba(nome: "Meu diário" | "Feed" | "Pessoas") {
+    await this.page.getByRole("navigation", { name: "Seções" }).getByRole("link", { name: nome }).click();
+  }
+
+  async abrirPerfil(login: string) {
+    await this.abrirAba("Pessoas");
+    await this.buscaPessoas.fill(login);
+    await this.page.getByRole("link", { name: login, exact: true }).click();
+    await expect(this.page.getByRole("heading", { name: login, exact: true })).toBeVisible();
+  }
+
+  titulosNoFeed(): Promise<string[]> {
+    return this.posts.getByRole("heading").allTextContents();
+  }
 }
 
 export const test = base.extend<{ diario: DiarioPage; login: string }>({

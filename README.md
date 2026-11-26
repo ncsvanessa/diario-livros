@@ -2,7 +2,7 @@
 
 [![CI](../../actions/workflows/ci.yml/badge.svg)](../../actions/workflows/ci.yml)
 
-Aplicação em C++ para registrar livros lidos, com título, autor, capa, data de lançamento, data de leitura e avaliação de 0 a 5 estrelas. A interface é uma página HTML servida por um servidor local.
+Aplicação em C++ para registrar livros lidos, com título, autor, capa, data de lançamento, data de leitura e avaliação de 0 a 5 estrelas. Permite buscar por título ou autor, ordenar por nota, filtrar por nota mínima e ver o ranking dos autores mais lidos. A interface é uma página HTML servida por um servidor local.
 
 Trabalho prático de GitHub Actions — Engenharia de Software II (DCC/UFMG).
 
@@ -13,7 +13,8 @@ Trabalho prático de GitHub Actions — Engenharia de Software II (DCC/UFMG).
 | `include/diario/diario.hpp`, `src/diario.cpp` | Núcleo: modelo `Livro`, validação, classe `Diario`, persistência em JSON |
 | `src/main.cpp` | Servidor HTTP (cpp-httplib) com API REST e arquivos estáticos |
 | `web/index.html` | Interface |
-| `tests/test_diario.cpp` | 17 testes de unidade (GoogleTest) |
+| `tests/test_diario.cpp`, `tests/test_repositorio.cpp` | 30 testes de unidade (GoogleTest) |
+| `e2e/` | 20 testes end-to-end (Playwright) |
 | `.github/workflows/ci.yml` | CI: build e testes em Ubuntu, macOS e Windows, com C++17 e C++20 |
 
 O núcleo não depende de rede nem de interface, então os testes exercitam as regras diretamente.
@@ -74,6 +75,8 @@ npx playwright test --ui        # modo interativo
 | `e2e/tests/edicao.spec.ts` | editar, cancelar edição, remover e recusar remoção |
 | `e2e/tests/busca.spec.ts` | busca por autor, busca sem resultado, ordenação por nota, busca + ordenação |
 | `e2e/tests/sugestoes.spec.ts` | sugestões da Open Library (simulada) e falha da API externa |
+| `e2e/tests/filtro-nota.spec.ts` | filtro por nota mínima, sozinho e combinado com a busca |
+| `e2e/tests/autores.spec.ts` | ranking dos autores mais lidos: vazio, top 3 com desempate, atualização ao adicionar |
 
 ## Docker
 
@@ -86,8 +89,8 @@ docker run -p 8080:8080 -e DATABASE_URL="postgresql://..." diario-livros
 
 | Método | Rota | Descrição |
 |---|---|---|
-| `GET` | `/api/livros?q=<termo>&ordem=nota` | Lista, com busca e ordenação opcionais |
-| `GET` | `/api/estatisticas` | Total de livros e nota média |
+| `GET` | `/api/livros?q=<termo>&ordem=nota&notaMin=<0-5>` | Lista, com busca, ordenação e nota mínima opcionais (`400` se `notaMin` for inválida) |
+| `GET` | `/api/estatisticas` | Total de livros, nota média e os 3 autores mais lidos |
 | `POST` | `/api/livros` | Cria um livro (`201`, ou `400` com `{"erro": ...}`) |
 | `PUT` | `/api/livros/{id}` | Atualiza um livro (`404` se não existir) |
 | `DELETE` | `/api/livros/{id}` | Remove um livro (`204`) |

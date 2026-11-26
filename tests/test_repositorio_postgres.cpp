@@ -8,6 +8,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <libpq-fe.h>
@@ -120,6 +121,49 @@ TEST_F(RepositorioPostgresTest, BuscarUsuariosTrataSublinhadoComoCaractereComum)
 
     ASSERT_EQ(encontrados.size(), 1u);
     EXPECT_EQ(encontrados[0].login, prefixo + "_x");
+}
+
+// ---- Seguir -------------------------------------------------------------------
+
+TEST_F(RepositorioPostgresTest, SeguirAparecePrimeiroNosSeguidosENosSeguidores) {
+    const int ana = novoUsuario();
+    const int bia = novoUsuario();
+
+    repo_->seguir(ana, bia);
+
+    EXPECT_EQ(repo_->seguidos(ana), std::vector<int>{bia});
+    EXPECT_EQ(repo_->seguidores(bia), std::vector<int>{ana});
+}
+
+TEST_F(RepositorioPostgresTest, SeguirDuasVezesNaoDuplica) {
+    const int ana = novoUsuario();
+    const int bia = novoUsuario();
+
+    repo_->seguir(ana, bia);
+    repo_->seguir(ana, bia);
+
+    EXPECT_EQ(repo_->seguidos(ana).size(), 1u);
+}
+
+TEST_F(RepositorioPostgresTest, DeixarDeSeguirRemoveARelacao) {
+    const int ana = novoUsuario();
+    const int bia = novoUsuario();
+    repo_->seguir(ana, bia);
+
+    repo_->deixarDeSeguir(ana, bia);
+
+    EXPECT_TRUE(repo_->seguidos(ana).empty());
+    EXPECT_TRUE(repo_->seguidores(bia).empty());
+}
+
+TEST_F(RepositorioPostgresTest, SeguidoresVemEmOrdemCrescenteDeId) {
+    const int ana = novoUsuario();
+    const int bia = novoUsuario();
+    const int caio = novoUsuario();
+    repo_->seguir(caio, ana);
+    repo_->seguir(bia, ana);
+
+    EXPECT_EQ(repo_->seguidores(ana), (std::vector<int>{bia, caio}));
 }
 
 // ---- Diários ------------------------------------------------------------------

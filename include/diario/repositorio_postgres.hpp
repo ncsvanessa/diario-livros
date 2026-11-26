@@ -21,6 +21,10 @@ public:
     std::optional<Usuario> buscarUsuarioPorLogin(const std::string& login) override;
     std::optional<Usuario> buscarUsuarioPorId(int id) override;
     std::vector<Usuario> buscarUsuarios(const std::string& trecho, std::size_t limite) override;
+    void seguir(int seguidorId, int seguidoId) override;
+    void deixarDeSeguir(int seguidorId, int seguidoId) override;
+    std::vector<int> seguidos(int usuarioId) override;
+    std::vector<int> seguidores(int usuarioId) override;
     Diario carregarDiario(int usuarioId) override;
 
     // Regrava os livros do usuário numa única transação: ou tudo é salvo, ou nada muda.

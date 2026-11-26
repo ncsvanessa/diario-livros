@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <map>
+#include <set>
 #include <stdexcept>
 
 #include "diario/repositorio.hpp"
@@ -52,6 +53,31 @@ public:
         return encontrados;
     }
 
+    void seguir(int seguidorId, int seguidoId) override {
+        falharSeIndisponivel();
+        seguindo[seguidorId].insert(seguidoId);
+    }
+
+    void deixarDeSeguir(int seguidorId, int seguidoId) override {
+        falharSeIndisponivel();
+        seguindo[seguidorId].erase(seguidoId);
+    }
+
+    std::vector<int> seguidos(int usuarioId) override {
+        falharSeIndisponivel();
+        const auto& s = seguindo[usuarioId];
+        return {s.begin(), s.end()};
+    }
+
+    std::vector<int> seguidores(int usuarioId) override {
+        falharSeIndisponivel();
+        std::vector<int> ids;
+        for (const auto& [seguidor, seguidos] : seguindo) {
+            if (seguidos.count(usuarioId)) ids.push_back(seguidor);
+        }
+        return ids;
+    }
+
     Diario carregarDiario(int usuarioId) override {
         falharSeIndisponivel();
         return diarios[usuarioId];
@@ -64,6 +90,7 @@ public:
 
     std::map<int, Usuario> usuarios;
     std::map<int, Diario> diarios;
+    std::map<int, std::set<int>> seguindo;  // seguidor -> seguidos
     bool indisponivel = false;  // simula banco fora do ar
 
 private:

@@ -14,8 +14,10 @@ using nlohmann::json;
 //   "versao": 2,
 //   "proximoUsuarioId": 3,
 //   "usuarios": [{"id": 1, "login": "ana", "senhaHash": "argon2id$..."}],
-//   "diarios": {"1": {"proximoId": 2, "livros": [...]}}
+//   "diarios": {"1": {"proximoId": 2, "livros": [...]}},
+//   "seguindo": {"1": [2, 3]}
 // }
+// "seguindo" é opcional: arquivos gravados antes de existir seguir não o têm.
 
 namespace {
 
@@ -99,6 +101,51 @@ std::vector<Usuario> RepositorioArquivo::buscarUsuarios(const std::string& trech
               [](const Usuario& a, const Usuario& b) { return a.login < b.login; });
     if (encontrados.size() > limite) encontrados.resize(limite);
     return encontrados;
+}
+
+namespace {
+
+std::vector<int> idsSeguidos(const json& dados, int usuarioId) {
+    const auto chave = std::to_string(usuarioId);
+    if (!dados.contains("seguindo") || !dados.at("seguindo").contains(chave)) return {};
+    return dados.at("seguindo").at(chave).get<std::vector<int>>();
+}
+
+}  // namespace
+
+void RepositorioArquivo::seguir(int seguidorId, int seguidoId) {
+    auto dados = ler();
+    auto ids = idsSeguidos(dados, seguidorId);
+    if (std::find(ids.begin(), ids.end(), seguidoId) != ids.end()) return;
+    ids.push_back(seguidoId);
+    std::sort(ids.begin(), ids.end());
+    dados["seguindo"][std::to_string(seguidorId)] = ids;
+    gravar(dados);
+}
+
+void RepositorioArquivo::deixarDeSeguir(int seguidorId, int seguidoId) {
+    auto dados = ler();
+    auto ids = idsSeguidos(dados, seguidorId);
+    const auto fim = std::remove(ids.begin(), ids.end(), seguidoId);
+    if (fim == ids.end()) return;
+    ids.erase(fim, ids.end());
+    dados["seguindo"][std::to_string(seguidorId)] = ids;
+    gravar(dados);
+}
+
+std::vector<int> RepositorioArquivo::seguidos(int usuarioId) { return idsSeguidos(ler(), usuarioId); }
+
+std::vector<int> RepositorioArquivo::seguidores(int usuarioId) {
+    const auto dados = ler();
+    std::vector<int> ids;
+    if (!dados.contains("seguindo")) return ids;
+    for (const auto& [chave, seguidos] : dados.at("seguindo").items()) {
+        for (const auto& id : seguidos) {
+            if (id.get<int>() == usuarioId) ids.push_back(std::stoi(chave));
+        }
+    }
+    std::sort(ids.begin(), ids.end());
+    return ids;
 }
 
 Diario RepositorioArquivo::carregarDiario(int usuarioId) {

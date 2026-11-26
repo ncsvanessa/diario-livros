@@ -34,6 +34,14 @@ public:
     // no máximo `limite`. Trecho vazio devolve lista vazia.
     virtual std::vector<Usuario> buscarUsuarios(const std::string& trecho, std::size_t limite) = 0;
 
+    // Quem segue quem. Seguir duas vezes ou deixar de seguir quem não segue não muda nada.
+    // As regras (ex.: não seguir a si mesmo) ficam na Api; aqui só se guarda a relação.
+    virtual void seguir(int seguidorId, int seguidoId) = 0;
+    virtual void deixarDeSeguir(int seguidorId, int seguidoId) = 0;
+    // Ids em ordem crescente.
+    virtual std::vector<int> seguidos(int usuarioId) = 0;    // quem o usuário segue
+    virtual std::vector<int> seguidores(int usuarioId) = 0;  // quem segue o usuário
+
     // Diário vazio se o usuário ainda não salvou nada.
     virtual Diario carregarDiario(int usuarioId) = 0;
 
@@ -51,6 +59,10 @@ public:
     std::optional<Usuario> buscarUsuarioPorLogin(const std::string& login) override;
     std::optional<Usuario> buscarUsuarioPorId(int id) override;
     std::vector<Usuario> buscarUsuarios(const std::string& trecho, std::size_t limite) override;
+    void seguir(int seguidorId, int seguidoId) override;
+    void deixarDeSeguir(int seguidorId, int seguidoId) override;
+    std::vector<int> seguidos(int usuarioId) override;
+    std::vector<int> seguidores(int usuarioId) override;
     Diario carregarDiario(int usuarioId) override;
     void salvarDiario(int usuarioId, const Diario& diario) override;
 

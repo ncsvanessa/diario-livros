@@ -2,6 +2,7 @@
 #include <fstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -127,6 +128,78 @@ TEST_F(RepositorioArquivoTest, BuscarUsuariosTrataSublinhadoComoCaractereComum) 
 
     ASSERT_EQ(encontrados.size(), 1u);
     EXPECT_EQ(encontrados[0].login, "ana_maria");
+}
+
+// ---- Seguir -------------------------------------------------------------------
+
+TEST_F(RepositorioArquivoTest, SeguirAparecePrimeiroNosSeguidosENosSeguidores) {
+    RepositorioArquivo repo(caminho_.string());
+    const int ana = repo.criarUsuario("ana", "h");
+    const int bia = repo.criarUsuario("bia", "h");
+
+    repo.seguir(ana, bia);
+
+    EXPECT_EQ(repo.seguidos(ana), std::vector<int>{bia});
+    EXPECT_EQ(repo.seguidores(bia), std::vector<int>{ana});
+    EXPECT_TRUE(repo.seguidos(bia).empty());
+}
+
+TEST_F(RepositorioArquivoTest, SeguirDuasVezesNaoDuplica) {
+    RepositorioArquivo repo(caminho_.string());
+    const int ana = repo.criarUsuario("ana", "h");
+    const int bia = repo.criarUsuario("bia", "h");
+
+    repo.seguir(ana, bia);
+    repo.seguir(ana, bia);
+
+    EXPECT_EQ(repo.seguidos(ana).size(), 1u);
+}
+
+TEST_F(RepositorioArquivoTest, DeixarDeSeguirRemoveARelacao) {
+    RepositorioArquivo repo(caminho_.string());
+    const int ana = repo.criarUsuario("ana", "h");
+    const int bia = repo.criarUsuario("bia", "h");
+    repo.seguir(ana, bia);
+
+    repo.deixarDeSeguir(ana, bia);
+
+    EXPECT_TRUE(repo.seguidos(ana).empty());
+    EXPECT_TRUE(repo.seguidores(bia).empty());
+}
+
+TEST_F(RepositorioArquivoTest, DeixarDeSeguirQuemNaoSegueNaoMudaNada) {
+    RepositorioArquivo repo(caminho_.string());
+    const int ana = repo.criarUsuario("ana", "h");
+    const int bia = repo.criarUsuario("bia", "h");
+    const int caio = repo.criarUsuario("caio", "h");
+    repo.seguir(ana, bia);
+
+    repo.deixarDeSeguir(ana, caio);
+
+    EXPECT_EQ(repo.seguidos(ana), std::vector<int>{bia});
+}
+
+TEST_F(RepositorioArquivoTest, SeguidoresVemEmOrdemCrescenteDeId) {
+    RepositorioArquivo repo(caminho_.string());
+    const int ana = repo.criarUsuario("ana", "h");
+    const int bia = repo.criarUsuario("bia", "h");
+    const int caio = repo.criarUsuario("caio", "h");
+    repo.seguir(caio, ana);
+    repo.seguir(bia, ana);
+
+    EXPECT_EQ(repo.seguidores(ana), (std::vector<int>{bia, caio}));
+}
+
+TEST_F(RepositorioArquivoTest, ArquivoSemSeguidoresDeVersaoAnteriorCarregaSemRelacoes) {
+    {
+        std::ofstream out(caminho_);
+        out << R"({"versao": 2, "proximoUsuarioId": 2,
+                   "usuarios": [{"id": 1, "login": "ana", "senhaHash": "h"}], "diarios": {}})";
+    }
+    RepositorioArquivo repo(caminho_.string());
+
+    EXPECT_TRUE(repo.seguidos(1).empty());
+    EXPECT_TRUE(repo.seguidores(1).empty());
 }
 
 // ---- Diários ------------------------------------------------------------------

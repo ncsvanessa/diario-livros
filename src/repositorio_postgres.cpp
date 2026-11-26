@@ -39,6 +39,12 @@ CREATE TABLE IF NOT EXISTS livros (
 );
 -- Bancos criados antes da coluna registrado_em: CREATE TABLE IF NOT EXISTS não a adiciona.
 ALTER TABLE livros ADD COLUMN IF NOT EXISTS registrado_em text NOT NULL DEFAULT '';
+-- Quem segue quem. Apagar um usuário apaga as relações dele.
+CREATE TABLE IF NOT EXISTS seguidores (
+    seguidor_id integer NOT NULL REFERENCES usuarios (id) ON DELETE CASCADE,
+    seguido_id  integer NOT NULL REFERENCES usuarios (id) ON DELETE CASCADE,
+    PRIMARY KEY (seguidor_id, seguido_id)
+);
 -- Próximo id de livro de cada usuário, para que ids removidos não sejam reaproveitados.
 CREATE TABLE IF NOT EXISTS diario_meta (
     usuario_id integer PRIMARY KEY REFERENCES usuarios (id) ON DELETE CASCADE,
@@ -147,6 +153,43 @@ std::vector<Usuario> RepositorioPostgres::buscarUsuarios(const std::string& trec
             Usuario{std::stoi(PQgetvalue(r.get(), i, 0)), PQgetvalue(r.get(), i, 1), PQgetvalue(r.get(), i, 2)});
     }
     return encontrados;
+}
+
+namespace {
+
+std::vector<int> ids(const PGresult* r) {
+    std::vector<int> out;
+    for (int i = 0; i < PQntuples(r); ++i) out.push_back(std::stoi(PQgetvalue(r, i, 0)));
+    return out;
+}
+
+}  // namespace
+
+void RepositorioPostgres::seguir(int seguidorId, int seguidoId) {
+    auto c = conectar(url_);
+    // ON CONFLICT: seguir de novo não é erro.
+    executar(c.get(), "INSERT INTO seguidores (seguidor_id, seguido_id) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+             {std::to_string(seguidorId), std::to_string(seguidoId)});
+}
+
+void RepositorioPostgres::deixarDeSeguir(int seguidorId, int seguidoId) {
+    auto c = conectar(url_);
+    executar(c.get(), "DELETE FROM seguidores WHERE seguidor_id = $1 AND seguido_id = $2",
+             {std::to_string(seguidorId), std::to_string(seguidoId)});
+}
+
+std::vector<int> RepositorioPostgres::seguidos(int usuarioId) {
+    auto c = conectar(url_);
+    auto r = executar(c.get(), "SELECT seguido_id FROM seguidores WHERE seguidor_id = $1 ORDER BY seguido_id",
+                      {std::to_string(usuarioId)});
+    return ids(r.get());
+}
+
+std::vector<int> RepositorioPostgres::seguidores(int usuarioId) {
+    auto c = conectar(url_);
+    auto r = executar(c.get(), "SELECT seguidor_id FROM seguidores WHERE seguido_id = $1 ORDER BY seguidor_id",
+                      {std::to_string(usuarioId)});
+    return ids(r.get());
 }
 
 Diario RepositorioPostgres::carregarDiario(int usuarioId) {

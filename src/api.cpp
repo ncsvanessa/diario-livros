@@ -1,6 +1,7 @@
 #include "diario/api.hpp"
 
 #include <cctype>
+#include <ctime>
 #include <iostream>
 #include <stdexcept>
 #include <utility>
@@ -60,6 +61,21 @@ std::pair<std::string, std::string> credenciais(const Requisicao& req) {
     // value() também lança json::exception se o corpo não for um objeto.
     const auto j = json::parse(req.corpo);
     return {j.value("login", std::string{}), j.value("senha", std::string{})};
+}
+
+// Instante em UTC no formato AAAA-MM-DDTHH:MM:SSZ: em texto ISO, a ordem alfabética
+// coincide com a cronológica.
+std::string instanteIso(AssinadorSessao::Instante instante) {
+    const std::time_t t = std::chrono::system_clock::to_time_t(instante);
+    std::tm tm{};
+#ifdef _WIN32
+    gmtime_s(&tm, &t);
+#else
+    gmtime_r(&t, &tm);
+#endif
+    char texto[sizeof "AAAA-MM-DDTHH:MM:SSZ"];
+    std::strftime(texto, sizeof texto, "%Y-%m-%dT%H:%M:%SZ", &tm);
+    return texto;
 }
 
 }  // namespace
@@ -221,6 +237,8 @@ Resposta Api::criarLivro(const Requisicao& req) {
     if (!usuario) return naoAutenticado();
     try {
         auto livro = json::parse(req.corpo).get<Livro>();
+        // Definido pelo servidor: um valor enviado pelo cliente é ignorado.
+        livro.registradoEm = instanteIso(opcoes_.relogio());
         std::lock_guard<std::mutex> lock(mtx_);
         auto& diario = diarioDe(*usuario);
         // Altera uma cópia e só a adota depois de salvar: se a gravação falhar,

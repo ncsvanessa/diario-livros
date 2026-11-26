@@ -105,6 +105,37 @@ TEST(Diario, AtualizarPreservaIdEValida) {
     EXPECT_EQ(d.buscar(id)->nota, 4);  // falha não altera o registro
 }
 
+TEST(Diario, AtualizarMantemQuandoOLivroFoiRegistrado) {
+    Diario d;
+    Livro original = livro("A", "X", 1);
+    original.registradoEm = "2026-11-01T10:00:00Z";
+    const int id = d.adicionar(original);
+
+    Livro editado = livro("A", "X", 5);
+    editado.registradoEm = "2030-01-01T00:00:00Z";
+    d.atualizar(id, editado);
+
+    EXPECT_EQ(d.buscar(id)->registradoEm, "2026-11-01T10:00:00Z");
+}
+
+TEST(Persistencia, JsonPreservaQuandoOLivroFoiRegistrado) {
+    Diario d;
+    Livro l = livro("A", "X", 1);
+    l.registradoEm = "2026-11-01T10:00:00Z";
+    d.adicionar(l);
+
+    const auto copia = Diario::deJson(d.paraJson());
+
+    EXPECT_EQ(copia.listar().at(0).registradoEm, "2026-11-01T10:00:00Z");
+}
+
+TEST(Persistencia, LivroAntigoSemRegistroCarregaComCampoVazio) {
+    const auto d = Diario::deJson(
+        nlohmann::json{{"proximoId", 2}, {"livros", {{{"id", 1}, {"titulo", "A"}, {"autor", "X"}, {"nota", 3}}}}});
+
+    EXPECT_EQ(d.listar().at(0).registradoEm, "");
+}
+
 TEST(Diario, MediaDasNotas) {
     Diario d;
     EXPECT_DOUBLE_EQ(d.mediaNotas(), 0.0);

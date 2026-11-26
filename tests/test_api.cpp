@@ -385,6 +385,30 @@ TEST_F(ApiTest, LivroCriadoEhGravadoNoDiarioDoUsuario) {
     EXPECT_EQ(repo.diarios.at(1).tamanho(), 1u);
 }
 
+TEST_F(ApiTest, LivroCriadoRegistraOInstanteDoServidorEmUtc) {
+    // agora = 1.800.000.000 s desde 1970 = 15/01/2027 08:00:00 UTC.
+    const auto r = api.criarLivro(req(entrarComo("ana"), livro("Vidas Secas", "Graciliano Ramos", 4)));
+
+    EXPECT_EQ(r.corpo.at("registradoEm"), "2027-01-15T08:00:00Z");
+}
+
+TEST_F(ApiTest, LivroCriadoIgnoraRegistroEnviadoPeloCliente) {
+    auto corpo = livro("Vidas Secas", "Graciliano Ramos", 4);
+    corpo["registradoEm"] = "1999-01-01T00:00:00Z";
+
+    const auto r = api.criarLivro(req(entrarComo("ana"), corpo));
+
+    EXPECT_EQ(r.corpo.at("registradoEm"), "2027-01-15T08:00:00Z");
+}
+
+TEST_F(ApiComLivros, AtualizarLivroMantemQuandoEleFoiRegistrado) {
+    agora += std::chrono::hours{24};
+
+    const auto r = api.atualizarLivro(req(ana, livro("Dom Casmurro (2a ed.)", "Machado de Assis", 4)), 1);
+
+    EXPECT_EQ(r.corpo.at("registradoEm"), "2027-01-15T08:00:00Z");
+}
+
 TEST_F(ApiTest, LivroInvalidoResponde400ComAMensagemDoNucleo) {
     const auto r = api.criarLivro(req(entrarComo("ana"), livro("", "Autor", 3)));
 

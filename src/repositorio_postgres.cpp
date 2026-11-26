@@ -34,8 +34,11 @@ CREATE TABLE IF NOT EXISTS livros (
     data_lancamento date,
     data_leitura    date,
     nota            smallint NOT NULL CHECK (nota BETWEEN 0 AND 5),
+    registrado_em   text     NOT NULL DEFAULT '',
     PRIMARY KEY (usuario_id, id)
 );
+-- Bancos criados antes da coluna registrado_em: CREATE TABLE IF NOT EXISTS não a adiciona.
+ALTER TABLE livros ADD COLUMN IF NOT EXISTS registrado_em text NOT NULL DEFAULT '';
 -- Próximo id de livro de cada usuário, para que ids removidos não sejam reaproveitados.
 CREATE TABLE IF NOT EXISTS diario_meta (
     usuario_id integer PRIMARY KEY REFERENCES usuarios (id) ON DELETE CASCADE,
@@ -138,7 +141,7 @@ Diario RepositorioPostgres::carregarDiario(int usuarioId) {
         SELECT id, titulo, autor, capa_url,
                coalesce(to_char(data_lancamento, 'YYYY-MM-DD'), ''),
                coalesce(to_char(data_leitura, 'YYYY-MM-DD'), ''),
-               nota
+               nota, registrado_em
         FROM livros WHERE usuario_id = $1 ORDER BY id)SQL",
                            {usuario});
     auto meta = executar(c.get(), "SELECT proximo_id FROM diario_meta WHERE usuario_id = $1", {usuario});
@@ -155,7 +158,8 @@ Diario RepositorioPostgres::carregarDiario(int usuarioId) {
                                {"capaUrl", PQgetvalue(r, i, 3)},
                                {"dataLancamento", PQgetvalue(r, i, 4)},
                                {"dataLeitura", PQgetvalue(r, i, 5)},
-                               {"nota", std::stoi(PQgetvalue(r, i, 6))}});
+                               {"nota", std::stoi(PQgetvalue(r, i, 6))},
+                               {"registradoEm", PQgetvalue(r, i, 7)}});
     }
     return Diario::deJson(j);
 }
@@ -170,12 +174,13 @@ void RepositorioPostgres::salvarDiario(int usuarioId, const Diario& diario) {
     executar(c.get(), "DELETE FROM livros WHERE usuario_id = $1", {usuario});
     for (const auto& l : j["livros"]) {
         executar(c.get(),
-                 "INSERT INTO livros (usuario_id, id, titulo, autor, capa_url, data_lancamento, data_leitura, nota) "
-                 "VALUES ($1, $2, $3, $4, $5, NULLIF($6, '')::date, NULLIF($7, '')::date, $8)",
+                 "INSERT INTO livros (usuario_id, id, titulo, autor, capa_url, data_lancamento, data_leitura, nota, "
+                 "registrado_em) "
+                 "VALUES ($1, $2, $3, $4, $5, NULLIF($6, '')::date, NULLIF($7, '')::date, $8, $9)",
                  {usuario, std::to_string(l["id"].get<int>()), l["titulo"].get<std::string>(),
                   l["autor"].get<std::string>(), l["capaUrl"].get<std::string>(),
                   l["dataLancamento"].get<std::string>(), l["dataLeitura"].get<std::string>(),
-                  std::to_string(l["nota"].get<int>())});
+                  std::to_string(l["nota"].get<int>()), l["registradoEm"].get<std::string>()});
     }
     executar(c.get(),
              "INSERT INTO diario_meta (usuario_id, proximo_id) VALUES ($1, $2) "

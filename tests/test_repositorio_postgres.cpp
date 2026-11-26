@@ -99,6 +99,7 @@ TEST_F(RepositorioPostgresTest, CarregarDevolveTodosOsCamposSalvos) {
     l.capaUrl = "https://exemplo.com/vidas-secas.jpg";
     l.dataLancamento = "1938-01-01";
     l.dataLeitura = "2026-10-20";
+    l.registradoEm = "2026-10-21T13:45:00Z";
     Diario original;
     original.adicionar(l);
 
@@ -111,6 +112,7 @@ TEST_F(RepositorioPostgresTest, CarregarDevolveTodosOsCamposSalvos) {
     EXPECT_EQ(lido.dataLancamento, "1938-01-01");
     EXPECT_EQ(lido.dataLeitura, "2026-10-20");
     EXPECT_EQ(lido.nota, 4);
+    EXPECT_EQ(lido.registradoEm, "2026-10-21T13:45:00Z");
 }
 
 TEST_F(RepositorioPostgresTest, DatasVaziasContinuamVaziasAposCarregar) {

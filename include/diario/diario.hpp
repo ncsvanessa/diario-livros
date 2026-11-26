@@ -17,6 +17,9 @@ struct Livro {
     std::string dataLancamento;  // opcional: AAAA-MM-DD
     std::string dataLeitura;     // opcional: AAAA-MM-DD
     int nota = 0;                // 0 a 5 estrelas
+    // Quando entrou no diário, em UTC (AAAA-MM-DDTHH:MM:SSZ). Definido pela Api ao criar;
+    // não muda ao editar. Vazio em livros registrados antes deste campo existir.
+    std::string registradoEm;
 };
 
 // Quantos livros de um autor estão no diário.

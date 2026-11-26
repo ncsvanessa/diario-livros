@@ -101,7 +101,8 @@ void to_json(nlohmann::json& j, const Livro& l) {
                        {"capaUrl", l.capaUrl},
                        {"dataLancamento", l.dataLancamento},
                        {"dataLeitura", l.dataLeitura},
-                       {"nota", l.nota}};
+                       {"nota", l.nota},
+                       {"registradoEm", l.registradoEm}};
 }
 
 void from_json(const nlohmann::json& j, Livro& l) {
@@ -113,6 +114,7 @@ void from_json(const nlohmann::json& j, Livro& l) {
     l.dataLancamento = j.value("dataLancamento", std::string{});
     l.dataLeitura = j.value("dataLeitura", std::string{});
     l.nota = j.value("nota", 0);
+    l.registradoEm = j.value("registradoEm", std::string{});
 }
 
 void to_json(nlohmann::json& j, const AutorLido& a) {
@@ -136,6 +138,7 @@ bool Diario::atualizar(int id, Livro livro) {
     const auto erros = validar(livro);
     if (!erros.empty()) throw std::invalid_argument(juntar(erros));
     livro.id = id;
+    livro.registradoEm = it->registradoEm;  // editar não muda quando o livro entrou
     *it = std::move(livro);
     return true;
 }

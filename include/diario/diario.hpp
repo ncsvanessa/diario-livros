@@ -19,6 +19,12 @@ struct Livro {
     int nota = 0;                // 0 a 5 estrelas
 };
 
+// Quantos livros de um autor estão no diário.
+struct AutorLido {
+    std::string autor;
+    int livros = 0;
+};
+
 // ---- Validação --------------------------------------------------------------
 
 // true se `data` está no formato AAAA-MM-DD e é uma data real (considera bissextos).
@@ -37,6 +43,7 @@ std::vector<std::string> validar(const Livro& livro);
 
 void to_json(nlohmann::json& j, const Livro& l);
 void from_json(const nlohmann::json& j, Livro& l);
+void to_json(nlohmann::json& j, const AutorLido& a);
 
 // ---- Diário -----------------------------------------------------------------
 
@@ -62,6 +69,15 @@ public:
 
     // Maior nota primeiro; empate desempatado por título.
     std::vector<Livro> ordenadosPorNota() const;
+
+    // Livros com nota >= notaMinima, em ordem de inserção.
+    // Lança std::invalid_argument se notaMinima não estiver entre 0 e 5.
+    std::vector<Livro> comNotaMinima(int notaMinima) const;
+
+    // Os `limite` autores com mais livros, do maior para o menor; empate desempatado
+    // pelo nome. Agrupa o mesmo autor escrito com maiúsculas (ASCII) ou espaços diferentes,
+    // exibindo o nome como foi registrado pela primeira vez.
+    std::vector<AutorLido> autoresMaisLidos(std::size_t limite = 3) const;
 
     // Média das notas; 0.0 se o diário estiver vazio.
     double mediaNotas() const;

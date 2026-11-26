@@ -20,19 +20,23 @@ export class DiarioPage {
   readonly erro: Locator;
   readonly busca: Locator;
   readonly ordem: Locator;
+  readonly notaMinima: Locator;
+  readonly autoresMaisLidos: Locator;
   readonly cartoes: Locator;
   readonly total: Locator;
   readonly media: Locator;
 
   constructor(readonly page: Page) {
     this.titulo = page.getByLabel("Título");
-    this.autor = page.getByLabel("Autor");
+    this.autor = page.getByLabel("Autor", { exact: true });
     this.lancamento = page.getByLabel("Lançamento");
     this.leitura = page.getByLabel("Lido em");
     this.salvar = page.locator("#btn-salvar");
     this.erro = page.getByRole("alert");
     this.busca = page.getByRole("searchbox", { name: "Buscar" });
     this.ordem = page.getByRole("combobox", { name: "Ordenar" });
+    this.notaMinima = page.getByRole("combobox", { name: "Nota mínima" });
+    this.autoresMaisLidos = page.getByRole("list", { name: "Autores mais lidos" }).getByRole("listitem");
     this.cartoes = page.getByRole("article");
     this.total = page.locator("#st-total");
     this.media = page.locator("#st-media");

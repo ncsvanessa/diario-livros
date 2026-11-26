@@ -5,6 +5,7 @@
 // (exige build com DIARIO_WITH_POSTGRES=ON); senão, o arquivo indicado em --dados.
 // A URL vem do ambiente, e não de um argumento, porque contém a senha do banco.
 
+#include <cctype>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
@@ -100,26 +101,43 @@ int main(int argc, char** argv) {
     }
 
     srv.Get("/api/livros", [&](const httplib::Request& req, httplib::Response& res) {
-        std::lock_guard<std::mutex> lock(mtx);
         const auto termo = req.get_param_value("q");
         const auto ordem = req.get_param_value("ordem");
+        const auto notaMin = req.get_param_value("notaMin");
+        // Aceita só um dígito; o intervalo 0 a 5 é validado pelo núcleo.
+        if (!notaMin.empty() && (notaMin.size() != 1 || !std::isdigit(static_cast<unsigned char>(notaMin[0])))) {
+            responderErro(res, 400, "notaMin deve ser um inteiro de 0 a 5");
+            return;
+        }
+
+        std::lock_guard<std::mutex> lock(mtx);
         auto livros = ordem == "nota" ? dl.ordenadosPorNota() : dl.listar();
-        if (!termo.empty()) {
-            const auto filtrados = dl.pesquisar(termo);
-            std::vector<diario::Livro> out;
-            for (const auto& l : livros) {
-                for (const auto& f : filtrados) {
-                    if (f.id == l.id) { out.push_back(l); break; }
+        try {
+            // Cada filtro devolve um subconjunto; mantém só os livros presentes nele,
+            // preservando a ordenação escolhida.
+            const auto manterSo = [&livros](const std::vector<diario::Livro>& filtrados) {
+                std::vector<diario::Livro> out;
+                for (const auto& l : livros) {
+                    for (const auto& f : filtrados) {
+                        if (f.id == l.id) { out.push_back(l); break; }
+                    }
                 }
-            }
-            livros = std::move(out);
+                livros = std::move(out);
+            };
+            if (!termo.empty()) manterSo(dl.pesquisar(termo));
+            if (!notaMin.empty()) manterSo(dl.comNotaMinima(notaMin[0] - '0'));
+        } catch (const std::invalid_argument& e) {
+            responderErro(res, 400, e.what());
+            return;
         }
         responderJson(res, livros);
     });
 
     srv.Get("/api/estatisticas", [&](const httplib::Request&, httplib::Response& res) {
         std::lock_guard<std::mutex> lock(mtx);
-        responderJson(res, json{{"total", dl.tamanho()}, {"media", dl.mediaNotas()}});
+        responderJson(res, json{{"total", dl.tamanho()},
+                                {"media", dl.mediaNotas()},
+                                {"autoresMaisLidos", dl.autoresMaisLidos(3)}});
     });
 
     srv.Post("/api/livros", [&](const httplib::Request& req, httplib::Response& res) {

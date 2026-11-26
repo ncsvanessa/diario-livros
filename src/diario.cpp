@@ -115,6 +115,10 @@ void from_json(const nlohmann::json& j, Livro& l) {
     l.nota = j.value("nota", 0);
 }
 
+void to_json(nlohmann::json& j, const AutorLido& a) {
+    j = nlohmann::json{{"autor", a.autor}, {"livros", a.livros}};
+}
+
 // ---- Diário -----------------------------------------------------------------
 
 int Diario::adicionar(Livro livro) {
@@ -170,6 +174,36 @@ std::vector<Livro> Diario::ordenadosPorNota() const {
         return a.titulo < b.titulo;
     });
     return out;
+}
+
+std::vector<Livro> Diario::comNotaMinima(int notaMinima) const {
+    if (!notaValida(notaMinima)) throw std::invalid_argument("nota mínima deve estar entre 0 e 5");
+    std::vector<Livro> out;
+    std::copy_if(livros_.begin(), livros_.end(), std::back_inserter(out),
+                 [notaMinima](const Livro& l) { return l.nota >= notaMinima; });
+    return out;
+}
+
+std::vector<AutorLido> Diario::autoresMaisLidos(std::size_t limite) const {
+    // Agrupa pela forma normalizada, mas guarda o nome como apareceu primeiro.
+    std::vector<std::string> chaves;
+    std::vector<AutorLido> autores;
+    for (const auto& l : livros_) {
+        const auto chave = minusculo(aparar(l.autor));
+        const auto it = std::find(chaves.begin(), chaves.end(), chave);
+        if (it == chaves.end()) {
+            chaves.push_back(chave);
+            autores.push_back({aparar(l.autor), 1});
+        } else {
+            ++autores[static_cast<std::size_t>(it - chaves.begin())].livros;
+        }
+    }
+    std::sort(autores.begin(), autores.end(), [](const AutorLido& a, const AutorLido& b) {
+        if (a.livros != b.livros) return a.livros > b.livros;
+        return minusculo(a.autor) < minusculo(b.autor);
+    });
+    if (autores.size() > limite) autores.resize(limite);
+    return autores;
 }
 
 double Diario::mediaNotas() const {

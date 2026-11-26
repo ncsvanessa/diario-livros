@@ -49,11 +49,13 @@
   }
   @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
 
+  .lateral { display: flex; flex-direction: column; gap: 20px; }
+  /* Fixa a coluna ao rolar só quando ela cabe inteira na tela. */
+  @media (min-width: 861px) and (min-height: 940px) { .lateral { position: sticky; top: 16px; } }
   .painel {
     background: var(--cartao); border: 1px solid var(--linha); border-radius: var(--raio);
-    padding: 20px; box-shadow: var(--sombra); position: sticky; top: 16px;
+    padding: 20px; box-shadow: var(--sombra);
   }
-  @media (max-width: 860px) { .painel { position: static; } }
   .painel h2 { font-family: Fraunces, Georgia, serif; font-size: 20px; margin: 0 0 14px; }
   label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
   label small { font-weight: 400; color: var(--tinta-suave); }
@@ -127,6 +129,21 @@
   }
   .livro .ops button:hover { color: var(--acento); }
 
+  /* ---- Autores mais lidos ---- */
+  .autores { list-style: none; margin: 0; padding: 0; counter-reset: pos; }
+  .autores li {
+    counter-increment: pos; display: flex; align-items: baseline; gap: 10px;
+    padding: 8px 0; border-top: 1px solid var(--linha);
+  }
+  .autores li:first-child { border-top: 0; padding-top: 0; }
+  .autores li::before {
+    content: counter(pos); font-family: Fraunces, Georgia, serif; font-size: 18px;
+    color: var(--acento); min-width: 14px;
+  }
+  .autores .nome { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .autores .qtd { font-size: 12px; color: var(--tinta-suave); white-space: nowrap; }
+  .autores-vazio { margin: 0; font-size: 13px; color: var(--tinta-suave); }
+
   .vazio {
     border: 1px dashed var(--linha); border-radius: var(--raio); padding: 48px 20px; text-align: center;
     color: var(--tinta-suave);
@@ -175,6 +192,7 @@
 </header>
 
 <main>
+  <div class="lateral">
   <section class="painel" aria-labelledby="form-titulo">
     <h2 id="form-titulo">Registrar leitura</h2>
     <form id="form" novalidate>
@@ -219,12 +237,27 @@
     </form>
   </section>
 
+  <section class="painel" aria-labelledby="autores-titulo">
+    <h2 id="autores-titulo">Autores mais lidos</h2>
+    <ol class="autores" id="autores" aria-labelledby="autores-titulo"></ol>
+    <p class="autores-vazio" id="autores-vazio">Nenhum autor registrado ainda.</p>
+  </section>
+  </div>
+
   <section aria-label="Livros lidos">
     <div class="barra">
       <input type="search" id="busca" placeholder="Buscar por título ou autor" aria-label="Buscar">
       <select id="ordem" aria-label="Ordenar">
         <option value="">Ordem de registro</option>
         <option value="nota">Maior nota</option>
+      </select>
+      <select id="notaMin" aria-label="Nota mínima">
+        <option value="">Qualquer nota</option>
+        <option value="1">1★ ou mais</option>
+        <option value="2">2★ ou mais</option>
+        <option value="3">3★ ou mais</option>
+        <option value="4">4★ ou mais</option>
+        <option value="5">Só 5★</option>
       </select>
     </div>
     <div class="grade" id="grade"></div>
@@ -374,6 +407,8 @@ async function carregar() {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if ($("ordem").value) params.set("ordem", $("ordem").value);
+  const notaMin = $("notaMin").value;
+  if (notaMin) params.set("notaMin", notaMin);
 
   const [livros, st] = await Promise.all([
     api("GET", `/api/livros?${params}`),
@@ -382,19 +417,36 @@ async function carregar() {
 
   $("st-total").textContent = st.total;
   $("st-media").textContent = st.total ? st.media.toFixed(1).replace(".", ",") : "–";
+  desenharAutores(st.autoresMaisLidos);
 
   const grade = $("grade");
   if (!livros.length) {
     const v = document.createElement("div");
     v.className = "vazio";
     v.style.gridColumn = "1 / -1";
-    v.innerHTML = q
-      ? "<b>Nada encontrado</b>Nenhum título ou autor corresponde à busca."
+    v.innerHTML = q || notaMin
+      ? "<b>Nada encontrado</b>Nenhum livro corresponde à busca e aos filtros."
       : "<b>Seu diário está em branco</b>Registre o primeiro livro no formulário ao lado.";
     grade.replaceChildren(v);
     return;
   }
   grade.replaceChildren(...livros.map(cartao));
+}
+
+// Considera o diário inteiro, independentemente da busca e dos filtros da grade.
+function desenharAutores(autores) {
+  $("autores").replaceChildren(...autores.map((a) => {
+    const li = document.createElement("li");
+    const nome = document.createElement("span");
+    nome.className = "nome";
+    nome.textContent = a.autor;
+    const qtd = document.createElement("span");
+    qtd.className = "qtd";
+    qtd.textContent = `${a.livros} livro${a.livros > 1 ? "s" : ""}`;
+    li.append(nome, qtd);
+    return li;
+  }));
+  $("autores-vazio").hidden = autores.length > 0;
 }
 
 // ---- Formulário -------------------------------------------------------------
@@ -617,6 +669,7 @@ $("titulo").onblur = fecharSugestoes;
 let debounce;
 $("busca").oninput = () => { clearTimeout(debounce); debounce = setTimeout(carregar, 200); };
 $("ordem").onchange = carregar;
+$("notaMin").onchange = carregar;
 
 desenharEstrelas();
 carregar();

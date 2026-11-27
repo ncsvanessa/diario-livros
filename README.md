@@ -8,7 +8,7 @@ Rede de leitura em C++: cada pessoa registra os livros que leu, dá nota e acomp
 |---|---|
 | **Sistema em produção** | https://diario-livros.onrender.com |
 | **Integração contínua** | [GitHub Actions](../../actions/workflows/ci.yml) |
-| **Vídeo de apresentação** | [PREENCHER: link do YouTube] |
+| **Vídeo de apresentação** | https://youtu.be/DHaKR9sCdCs |
 
 Trabalho prático de Engenharia de Software II (DCC/UFMG).
 

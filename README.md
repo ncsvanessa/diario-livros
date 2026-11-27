@@ -89,7 +89,7 @@ O `main.cpp` só traduz entre o cpp-httplib e a classe `Api`. Toda a lógica das
 |---|---|---|
 | Vanessa | Claude (Anthropic) | Plano de adaptação do sistema aos requisitos do TP; medição de cobertura com gcovr e CI nos 3 sistemas; persistência em PostgreSQL, `Dockerfile` e deploy (Render + Neon); contas de usuário (Argon2id, cookie de sessão assinado, extração da classe `Api`) com testes de unidade e e2e; revisão final do repositório |
 | Artur | [PREENCHER] | [PREENCHER] |
-| Lucas | [PREENCHER] | [PREENCHER] |
+| Lucas | Claude Code (Anthropic) | Sugestões de livros da Open Library ao digitar o título, parte social (busca de pessoas, perfil, seguir e feed), da API à interface, com testes de unidade e e2e; script de dados para o vídeo; etapas definidas, revisadas e testadas por mim antes de cada commit |
 
 Como a IA foi usada no processo:
 
